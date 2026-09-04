@@ -25,7 +25,15 @@ class Rule(BaseModel):
     raw: str
      
     def triggered(self, action_name, input:str):  
-        return self.event == "any" or action_name == self.event or input.strip().startswith(self.event.replace("_",' '))
+        # FIX (local): `input` is None for AgentFinish actions and a dict for
+        # structured tool inputs; the original unconditionally called .strip()
+        # on it, so any normal task completion crashed with AttributeError
+        # whenever a tool-triggered rule was loaded.
+        if self.event == "any" or action_name == self.event:
+            return True
+        if input is None:
+            return False
+        return str(input).strip().startswith(self.event.replace("_",' '))
     
     def trigger_finished(self):
         return self.event=="finish"
