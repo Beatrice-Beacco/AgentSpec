@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.3 (schema validation spike).
+**Current position:** Sprint 1, Step S1.5 (first real schema).
 
 ---
 
@@ -97,11 +97,22 @@ Resolve every unknown here, before writing real code.
       direct. Decision recorded in [`docs/spikes.md`](docs/spikes.md); none of the
       three fallbacks the plan listed are needed. `make spike-annotations`.
       *Accept:* ✅ prints the advice for a denying policy and resolves the lattice.
-- [ ] **S1.3** Spike schema validation: write a deliberately broken policy (typo'd
-      attribute) and confirm `validate_policies()` catches it.
-      *Accept:* `spikes/validation.py` prints the validation error.
-- [ ] **S1.4** Measure Cedar decision latency: 10k `is_authorized` calls, report mean/p99.
-      *Accept:* number recorded in `docs/spikes.md`. (Expect microseconds — this becomes RQ5.)
+- [x] **S1.3** Schema validation spike. ✅ 2026-09-05
+      Eight cases: **five of six** malformed policies are rejected before any agent
+      step runs (typo'd context attribute, typo'd entity attribute, type mismatch,
+      unknown entity type, unknown action). AgentSpec catches none of them.
+      **Settles S2.2:** a misspelled flag is *missed* under `Set<String>` and
+      *caught* under a record of `Bool` — so S2.2 generates the record schema from
+      the predicate registry. `make spike-validation`.
+      *Accept:* ✅ prints each validation error.
+- [x] **S1.4** Decision latency: 10k authorizations. ✅ 2026-09-05
+      **0.0579 ms mean / 0.0772 ms p99** with a pre-parsed `PolicySet`; 0.1196 ms if
+      you pass policy text each call (2× slower — the trap to avoid in
+      `agentguard/engine.py`). `make spike-latency`.
+      *Accept:* ✅ recorded in [`docs/spikes.md`](docs/spikes.md).
+      A whole Cedar decision costs **less than AgentSpec spends on parsing alone**
+      (0.1512 ms) and 3.3× less than its full guard path (0.1919 ms) — while doing
+      more work: 3 policies, schema validation, order-independent result.
 - [ ] **S1.5** Write the first real schema `policies/schema.cedarschema` — just `Agent`,
       `Tool`, `action invoke`, and a `context` with `flags: Set<String>`.
       *Accept:* `validate_policies()` passes against a hand-written policy.
@@ -351,3 +362,5 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S0.12 | Expected one fail-open mode; found four. (1) **Silent acceptance** — a bad rule loads and then raises `ValueError` mid-run. (2) **Silent truncation** — `trigger Gmail.SendMail` loads as event `Gmail`, so the rule arms on a *different tool than written*: the most dangerous of the four, since it fails silently and permanently. (3) **Internal crash** — a *two-token* comment (`// index 0`) breaks ANTLR recovery hard enough that `Rule.from_text` dies with `AttributeError: 'RuleParser' object has no attribute 'event'`, while a *one-token* comment (`//index1`) is accepted; identical-looking comments behave differently by word count. (4) **Unregistered predicates** — 17 of the names used by `pythonrepl.ar` are defined in Python but never added to `predicate_table`, including `is_malware`, the corpus's very first rule. Checked whether the grammar's 36 predicates and the registry had diverged: they have not, and that is now a test. |
 | 2026-09-05 | S1.1 | Cedar reaches Allow and Deny in AgentSpec's own PARC shape. Confirms M1 concretely: `destuctive_os_inst` cannot run inside a policy (Cedar is pure and total), so it runs in Python and arrives as `context.flags` — detection in Python, decision in Cedar. |
 | 2026-09-05 | S1.2 | **Unblocked, but not the way the plan assumed.** `diagnostics.id_annotations_by_reason` carries only `@id` — the name is accurate and the plan misread it. `policies_to_json_str()` carries every annotation, keyed by the same `policy0/1/2` ids `diagnostics.reasons` returns, so the side-table joins directly and is built by cedarpy's own Cedar parser rather than a regex. None of the three fallbacks the plan listed are needed. Second finding: **Cedar does not return determining policies in source order** — for a two-forbid decision it returned `['policy2','policy1']`. Anything reading "the first determining policy" would be reading an unspecified ordering; the lattice join makes it irrelevant by construction. That is the concrete mechanism behind M2, and it hands S2.8 its property to test. |
+| 2026-09-05 | S1.3 | Validation catches typo'd context and entity attributes, type mismatches, unknown entity types and unknown actions — all at load, none of which AgentSpec can detect at all. Unplanned bonus: the spike **answers S2.2 five weeks early**. The same misspelled flag is missed under `flags: Set<String>` (any string is a valid member, so the policy type-checks and silently never fires) and caught under `flags: { name: Bool, ... }`. A silently-never-firing safety rule is the exact failure mode S0.12 documented, so the record-of-`Bool` codegen is now evidence-backed rather than a preference. |
+| 2026-09-05 | S1.4 | 0.0579 ms mean / 0.0772 ms p99 per decision with a pre-parsed `PolicySet`. Passing policy text instead costs 2× — worth knowing before writing the engine, since it is the same mistake AgentSpec makes. Against S0.11: a whole Cedar decision is cheaper than AgentSpec's *parsing phase alone*, and 3.3× cheaper than its whole guard path, while evaluating three policies with schema validation and an order-independent result. RQ5's honest headline is still "the engine is free, detection is the cost" — this is a ratio, not a latency problem. |

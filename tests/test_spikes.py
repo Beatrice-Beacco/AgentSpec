@@ -19,6 +19,8 @@ cedarpy = pytest.importorskip("cedarpy")
 
 import annotations as ann                      # noqa: E402
 import hello_cedar                             # noqa: E402
+import latency                                 # noqa: E402
+import validation                              # noqa: E402
 
 
 # ----------------------------------------------------------------- S1.1
@@ -115,3 +117,65 @@ def test_unannotated_forbid_defaults_to_stop():
     table = {pid: body.get("annotations", {}) for pid, body
              in json.loads(cedarpy.policies_to_json_str(policies))["staticPolicies"].items()}
     assert ann.resolve(result, table)[0] == "stop"
+
+
+# ----------------------------------------------------------------- S1.3
+
+def test_validation_spike_passes():
+    assert validation.main() == 0
+
+
+@pytest.mark.parametrize(
+    "label,schema,policy,must_be_caught",
+    validation.CASES,
+    ids=[c[0] for c in validation.CASES],
+)
+def test_validator_behaves_as_documented(label, schema, policy, must_be_caught):
+    """Each row of docs/spikes.md S1.3, asserted rather than described."""
+    result = cedarpy.validate_policies(policy, cedarpy.Schema.from_str(schema))
+    assert (not result.validation_passed) == must_be_caught
+
+
+def test_set_of_strings_cannot_catch_a_misspelled_flag():
+    """The negative half of the S2.2 decision.
+
+    If a future Cedar starts catching this, the record-of-Bools codegen in S2.2
+    becomes unnecessary -- so the miss is pinned, not just noted.
+    """
+    policy = ('permit(principal, action == Action::"invoke", resource) '
+              'when { context.flags.contains("involve_system_fyle") };')
+    result = cedarpy.validate_policies(policy, cedarpy.Schema.from_str(validation.SCHEMA_SET))
+    assert result.validation_passed
+
+
+def test_record_of_bools_catches_the_same_misspelled_flag():
+    policy = ('permit(principal, action == Action::"invoke", resource) '
+              'when { context.flags.involve_system_fyle };')
+    result = cedarpy.validate_policies(policy, cedarpy.Schema.from_str(validation.SCHEMA_RECORD))
+    assert not result.validation_passed
+    assert "involve_system_fyle" in str(result.errors[0])
+
+
+# ----------------------------------------------------------------- S1.4
+
+def test_policyset_and_policy_text_agree():
+    """Pre-parsing must be a pure optimisation, not a change in behaviour.
+
+    No timing is asserted -- CI runners are too noisy for that. The measured
+    numbers live in docs/spikes.md; what has to hold here is equivalence.
+    """
+    from_text = cedarpy.is_authorized(latency.REQUEST, latency.POLICIES, latency.ENTITIES)
+    from_set = cedarpy.is_authorized(latency.REQUEST,
+                                     cedarpy.PolicySet.from_str(latency.POLICIES),
+                                     latency.ENTITIES)
+    assert from_text.decision == from_set.decision == cedarpy.Decision.Deny
+    assert sorted(from_text.diagnostics.reasons) == sorted(from_set.diagnostics.reasons)
+
+
+def test_latency_spike_request_validates_against_its_schema():
+    """The spike measures a request that is actually schema-valid."""
+    result = cedarpy.is_authorized(latency.REQUEST, latency.POLICIES, latency.ENTITIES,
+                                   cedarpy.Schema.from_str(latency.SCHEMA))
+    assert not result.diagnostics.errors
+    assert cedarpy.validate_policies(
+        latency.POLICIES, cedarpy.Schema.from_str(latency.SCHEMA)).validation_passed

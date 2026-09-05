@@ -42,7 +42,7 @@ Expected:
 
 ```
 .................xxxxxxxx                                                [100%]
-51 passed, 13 xfailed in 0.19s
+64 passed, 13 xfailed in 0.19s
 ```
 
 `x` = **xfail**, an *expected* failure. The 13 xfails are recorded defects we
@@ -376,7 +376,7 @@ endorses: a permissive rule ahead of a restrictive one wins purely by position.
 That order dependence is one of the properties Cedar removes — `forbid` always
 wins, whatever the order (plan.md **S2.8**).
 
-**`test_spikes.py`** (13 tests) — pins the Cedar findings in `docs/spikes.md`:
+**`test_spikes.py`** (26 tests) — pins the Cedar findings in `docs/spikes.md`:
 that `@advice` is reachable via `policies_to_json_str()` and *not* via
 `id_annotations_by_reason`, that the annotation ids join to
 `diagnostics.reasons`, and that the advice lattice is order-independent. Skipped

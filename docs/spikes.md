@@ -98,10 +98,79 @@ gives S2.8 its property to test.
 
 ---
 
+## S1.3 — what does validation catch before anything runs? ✅
+
+`spikes/validation.py`. Eight policies against a schema:
+
+| case | result |
+|---|---|
+| valid policy | passes |
+| typo in context attribute (`context.rsik`) | **caught** — ``attribute `rsik` in context for Action::"invoke" not found`` |
+| typo in entity attribute (`resource.kindd`) | **caught** |
+| type mismatch (`context.risk == "high"`) | **caught** — `the types Long and String are not compatible` |
+| unknown entity type (`Widget::"w"`) | **caught** |
+| unknown action (`Action::"delet"`) | **caught** |
+| misspelled flag, `Set<String>` schema | **MISSED** |
+| misspelled flag, record-of-`Bool` schema | **caught** |
+
+Five of six malformed policies are rejected before a single agent step runs.
+AgentSpec catches none of these — there is no schema to check a rule against, and
+`tests/test_fail_open.py` documents the four ways a bad rule gets through instead.
+
+### This settles S2.2 early
+
+The last two rows are the *same typo* under two schema designs:
+
+- **`flags: Set<String>`** — any string is a valid set member, so
+  `context.flags.contains("involve_system_fyle")` type-checks. The result is a
+  safety policy that silently never fires: exactly the failure mode we are
+  leaving behind.
+- **`flags: { involve_system_file: Bool, … }`** — the attribute does not exist,
+  and validation fails with the misspelled name.
+
+> **Decision:** S2.2 generates a record-of-`Bool` schema from the predicate
+> registry and accepts the codegen step. The plan recommended this on principle;
+> this is the evidence.
+
+---
+
+## S1.4 — how fast is a decision? ✅
+
+`spikes/latency.py`. 10,000 authorizations, 3 policies, 2 entities:
+
+| configuration | mean ms | median | p95 | p99 |
+|---|---:|---:|---:|---:|
+| policy text, no schema | 0.1124 | 0.1082 | 0.1272 | 0.2087 |
+| policy text + schema | 0.1196 | 0.1157 | 0.1297 | 0.1844 |
+| **`PolicySet` parsed once** | **0.0579** | 0.0577 | 0.0645 | 0.0772 |
+
+Against the S0.11 baseline (`docs/baseline-latency.md`):
+
+| | mean ms per step |
+|---|---:|
+| AgentSpec `rule_parse` alone | 0.1512 |
+| AgentSpec guard total | 0.1919 |
+| Cedar, `PolicySet` parsed once | **0.0579** |
+
+**A whole Cedar decision costs less than AgentSpec spends on parsing alone**, and
+3.3× less than its full guard path — while doing strictly more work: three
+policies rather than one rule, schema validation, and an order-independent result.
+
+Read the ratio, not the absolutes. Both are microseconds against an LLM call
+measured in hundreds of milliseconds, so neither is a latency problem, and the
+honest RQ5 finding remains "the policy engine is free; detection is the cost."
+The point is narrower: the avoidable work AgentSpec pays on every action is
+avoidable *by default* in Cedar. A `PolicySet` is parsed once because that is the
+natural way to use the API — not because someone remembered to optimise.
+
+Passing policy text rather than a `PolicySet` costs 2× and is the trap to avoid
+in `agentguard/engine.py`.
+
+---
+
 ## Still open
 
 | Question | Step |
 |---|---|
-| Does `validate_policies()` catch a typo'd attribute against a schema? | S1.3 |
-| What is the per-decision latency at 10k calls? | S1.4 |
-| Record-of-bools vs `Set<String>` for flags — which does the validator catch more with? | S2.2 |
+| Does the record-of-`Bool` schema stay maintainable as predicates are added? | S2.2 |
+| Does partial evaluation let us filter tools before the agent sees them? | later |

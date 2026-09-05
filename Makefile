@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 51 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 64 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -30,13 +30,19 @@ test-enforcement: $(PYTEST)  ## just the enforcement tests, named
 test-parsing: $(PYTEST)  ## just the grammar probes, with real ANTLR errors
 	@$(PYTEST) --runxfail -q tests/test_rule_parsing.py
 
-spikes: spike-hello spike-annotations  ## run every Cedar spike
+spikes: spike-hello spike-annotations spike-validation spike-latency  ## run every Cedar spike
 
 spike-hello:  ## S1.1 - smallest Cedar decision (Allow + Deny)
 	@$(PY) spikes/hello_cedar.py
 
 spike-annotations:  ## S1.2 - reading @advice off determining policies
 	@$(PY) spikes/annotations.py
+
+spike-validation:  ## S1.3 - what validate_policies() catches at load
+	@$(PY) spikes/validation.py
+
+spike-latency:  ## S1.4 - 10k authorizations, mean/p99
+	@$(PY) spikes/latency.py
 
 ui:  ## start the test bench at http://127.0.0.1:5000
 	@$(VENV)/bin/python -c "import flask" 2>/dev/null || $(VENV)/bin/pip install -q -r requirements-dev.txt
