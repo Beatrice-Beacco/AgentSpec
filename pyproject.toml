@@ -14,3 +14,12 @@ dependencies = [
     "langchain_community",
     "langchain_experimental"
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# LangChain 0.3 deprecates initialize_agent / AgentType, which this fork still
+# uses. Silenced so a real warning stays visible; revisit if we migrate to LCEL.
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]

@@ -1,3 +1,15 @@
 .aider*
 .env
 openai.sh
+# --- local dev ---
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# CI byproducts
+junit.xml
+audit.md
+
+# raw profiler output (docs/baseline-latency.md is the frozen summary)
+expres/latency/

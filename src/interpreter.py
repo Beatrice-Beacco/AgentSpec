@@ -9,6 +9,7 @@ from enforcement import *
 from rule import Rule
 from agent import Action
 from rules.manual.table import predicate_table
+import profiling
 # from rules.predicate_table import predicate_table
  
  
@@ -110,19 +111,26 @@ class RuleInterpreter(AgentSpecListener):
     
      
     def verify_and_enforce(self, action: Action) -> Action: 
-        input_stream = InputStream(self.rule.raw)
-        lexer = AgentSpecLexer(input_stream)
-        token_stream = CommonTokenStream(lexer)
-        parser = AgentSpecParser(token_stream)
-        parser.removeErrorListeners()  # Remove default ConsoleErrorListener
-        parser.addErrorListener(CustomErrorListener())
+        profiling.count_rule()
+        # NOTE: this re-lexes and re-parses the rule text on every action. The
+        # profiler attributes it to rule_parse precisely so the cost is visible.
+        with profiling.phase("rule_parse"):
+            input_stream = InputStream(self.rule.raw)
+            lexer = AgentSpecLexer(input_stream)
+            token_stream = CommonTokenStream(lexer)
+            parser = AgentSpecParser(token_stream)
+            parser.removeErrorListeners()  # Remove default ConsoleErrorListener
+            parser.addErrorListener(CustomErrorListener())
 
-        # Parse the input using the top-level rule (e.g., program)
-        tree = parser.program() 
-        walker = ParseTreeWalker()
-        
-        walker.walk(self, tree)   
-        return ENFORCEMENT_TO_CLASS[self.enforce](state=self.rule_state).apply(action)
+            # Parse the input using the top-level rule (e.g., program)
+            tree = parser.program() 
+            walker = ParseTreeWalker()
+
+        # The walk is where predicates actually run (enterCheckClause).
+        with profiling.phase("predicate_eval"):
+            walker.walk(self, tree)   
+        with profiling.phase("enforcement"):
+            return ENFORCEMENT_TO_CLASS[self.enforce](state=self.rule_state).apply(action)
     
     
 class TestRuleInterpreter(unittest.TestCase):

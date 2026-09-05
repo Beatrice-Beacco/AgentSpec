@@ -1,0 +1,8 @@
+rule @block_file_deletion
+trigger
+    python_repl
+check
+    destuctive_os_inst
+enforce
+    stop
+end

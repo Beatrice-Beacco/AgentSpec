@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the previous run on the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # All three verified green in run #1. 3.12 is what the suite is developed
+      # against; the other two are required so a 3.12-only idiom can't sneak in.
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      # requirements-dev.txt, not requirement.txt: the latter is unpinned and
+      # lists ai2thor, which needs a GPU and a display.
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run the suite
+        run: pytest -q --junit-xml=junit.xml
+
+      # The 9 grammar limitations are xfail(strict=True). If someone fixes the
+      # grammar without updating tests/test_rule_parsing.py, they XPASS and the
+      # step above fails -- that is intentional, see plan.md S3.1.
+      - name: Report expected failures
+        if: always() && matrix.python == '3.12'
+        run: pytest -rxX -q tests/test_rule_parsing.py >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-py${{ matrix.python }}
+          path: junit.xml
+
+  audit:
+    name: rule-corpus audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+
+      # Publishes the parse state of the shipped rule corpus on every push, so
+      # the thesis evidence (plan.md S0.10) can never go stale unnoticed.
+      - name: Audit the shipped rules
+        run: python tools/audit_rules.py src | tee audit.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rule-audit
+          path: audit.md

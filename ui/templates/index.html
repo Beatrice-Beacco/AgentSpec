@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentSpec test bench</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>AgentSpec test bench</h1>
+  <span class="sub">rules &rarr; input &rarr; verdict</span>
+  <span id="engine" class="pill mute">engine: legacy</span>
+  <nav>
+    <a href="/" class="on">Bench</a>
+    <a href="/help">Help</a>
+  </nav>
+</header>
+
+<main>
+  <div class="grid">
+    <!-- ------------------------------------------------------- rules -->
+    <section class="panel">
+      <h2>Rules</h2>
+      <div class="row">
+        <select id="library" style="flex:1 1 240px"><option value="">— load from library —</option></select>
+        <button id="save">Save…</button>
+        <button id="clear">Clear</button>
+      </div>
+      <textarea id="rules" rows="17" spellcheck="false"
+                placeholder="rule @block_file_deletion&#10;trigger&#10;    python_repl&#10;check&#10;    destuctive_os_inst&#10;enforce&#10;    stop&#10;end"></textarea>
+      <div id="parse" class="hint">—</div>
+    </section>
+
+    <!-- ----------------------------------------------------- request -->
+    <section class="panel">
+      <h2>Request</h2>
+      <div class="row">
+        <select id="examples" style="flex:1 1 100%"><option value="">— load an example —</option></select>
+      </div>
+      <label for="task">User task <span class="muted">— the original request</span></label>
+      <input id="task" type="text" value="Delete the unimportant txt file">
+
+      <div class="row" style="margin-top:10px">
+        <div style="flex:0 0 200px">
+          <label for="tool">Tool name</label>
+          <input id="tool" type="text" value="python_repl">
+        </div>
+        <div style="flex:1 1 200px">
+          <label>&nbsp;</label>
+          <label class="small" style="display:flex;gap:6px;align-items:center;color:var(--ink)">
+            <input type="checkbox" id="approve" checked style="width:auto">
+            Approve <code>user_inspection</code> prompts
+          </label>
+        </div>
+      </div>
+
+      <label for="input">Proposed action <span class="muted">— what the agent wants to run</span></label>
+      <textarea id="input" rows="5" spellcheck="false">import os; os.remove("notes.txt")</textarea>
+
+      <details>
+        <summary>Prior steps (JSON) — for path-sensitive rules</summary>
+        <textarea id="steps" rows="4" spellcheck="false" placeholder="[]"></textarea>
+        <p class="hint">A list of prior observations. Embodied predicates expect
+          <code>[{"action": "...", "success": true}]</code>; most code predicates ignore it.</p>
+      </details>
+
+      <div class="row" style="margin-top:12px">
+        <button id="run" class="primary">Run ▸</button>
+        <button id="probe">Probe all predicates</button>
+        <span id="busy" class="muted small"></span>
+      </div>
+    </section>
+  </div>
+
+  <!-- ------------------------------------------------------- results -->
+  <section class="panel" id="results" hidden>
+    <h2>Result</h2>
+    <div class="row" style="gap:14px">
+      <span id="verdict" class="verdict">—</span>
+      <span id="verdictWhy" class="muted small"></span>
+    </div>
+    <div class="grid" style="margin-top:6px">
+      <div>
+        <h2>Why — per rule</h2>
+        <div id="why"></div>
+      </div>
+      <div>
+        <h2>What happened</h2>
+        <div id="outcome"></div>
+      </div>
+    </div>
+    <div id="cedar"></div>
+    <details><summary>Raw agent trace</summary><pre id="trace"></pre></details>
+  </section>
+
+  <section class="panel" id="probes" hidden>
+    <h2>Predicate probe <span class="muted" style="text-transform:none">— every registered predicate against this input</span></h2>
+    <div id="probeBody"></div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
