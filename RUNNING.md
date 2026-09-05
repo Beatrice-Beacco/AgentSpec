@@ -94,6 +94,34 @@ is harmless (unescaped regex in a normal string).
   ```
 - **`ai2thor`** (only for embodied experiments): needs a display; use Xvfb headless.
 
+### Python 3.14 does not work — use 3.11–3.13
+
+LangChain 0.3.x cannot be imported on 3.14 at all. `langchain.chains.base` defines
+`Chain.dict()`, and under PEP 649 the deferred evaluation of `Optional[dict[str, Any]]`
+resolves `dict` to that method, so the class fails at creation:
+
+```
+TypeError: 'function' object is not subscriptable
+Unable to evaluate type annotation 'Optional[dict[str, Any]]'.
+```
+
+That is upstream, not ours, and it happens before any AgentSpec code runs. CI pins
+3.11/3.12/3.13 for this reason. If 3.14 is the only interpreter on the machine
+(which is now the default on a fresh Windows install), get a supported one without
+touching the system Python:
+
+```bash
+pip install uv && uv python install 3.12 && uv venv --python 3.12 .venv
+uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
+```
+
+### Windows
+
+`make` is not usually installed, and the Makefile assumes `.venv/bin/`. Run the
+commands directly against `.venv/Scripts/python.exe` instead — `python -m pytest -q`
+for `make test`, `python tools/validate_policies.py` for `make validate`,
+`python ui/app.py` for `make ui`. Everything else in this document applies unchanged.
+
 ---
 
 ## 3. The mental model
@@ -208,6 +236,44 @@ print(Rule.from_text(open('../my_rule.ar').read()))"
 
 ⚠️ **`Rule.from_text` does not raise on a parse error.** It prints to the console
 and returns a Rule anyway. Watch stderr — silence means success.
+
+---
+
+## 4c. The Cedar engine (`agentguard/`)
+
+Since `plan.md` S1.7 there are two guard engines, selected by an environment
+variable and meant to stay runnable side by side for the whole project:
+
+```bash
+AGENTGUARD=cedar .venv/bin/pytest -q      # or: make test-cedar
+```
+
+`CedarControlledAgentExecutor` overrides exactly one method of the original
+executor — `validate_and_enforce` — so the ReAct loop, the enforcement classes
+and the observation text fed back to the agent are shared. A verdict difference
+between the engines is a difference in *deciding*, not in plumbing.
+
+```
+LLM plans ──▶ sensors      Python predicates → context.flags   (impure)
+          ──▶ request      Agent / invoke / Tool / context
+          ──▶ Cedar        is_authorized() → Allow | Deny      (pure, total)
+          ──▶ advice       @advice off the determining policies, joined
+          ──▶ enforcement.py                                   (reused)
+```
+
+The policy set lives in `policies/` and is validated at agent construction, so a
+policy that does not type-check stops the agent *starting*:
+
+```bash
+.venv/bin/python tools/validate_policies.py     # or: make validate
+```
+
+It knows one sensor and two policies so far — the full registry is S2.1 — so
+`make test-cedar` currently fails 12 of 128 tests, all of them exercising legacy
+rules the two-policy set cannot cover. That number is the S2.7 worklist.
+
+The bench shows the Cedar decision for every run regardless of which engine ran
+it, so the two verdicts can be compared on one screen.
 
 ---
 
