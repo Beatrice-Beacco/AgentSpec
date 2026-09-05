@@ -13,14 +13,20 @@ concurrency:
 
 jobs:
   test:
-    name: tests (py3.12)
+    name: tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # All three verified green in run #1. 3.12 is what the suite is developed
+      # against; the other two are required so a 3.12-only idiom can't sneak in.
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
 
@@ -38,36 +44,14 @@ jobs:
       # grammar without updating tests/test_rule_parsing.py, they XPASS and the
       # step above fails -- that is intentional, see plan.md S3.1.
       - name: Report expected failures
-        if: always()
+        if: always() && matrix.python == '3.12'
         run: pytest -rxX -q tests/test_rule_parsing.py >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: junit-py312
+          name: junit-py${{ matrix.python }}
           path: junit.xml
-
-  compat:
-    name: tests (py${{ matrix.python }})
-    runs-on: ubuntu-latest
-    # Informational only. 3.12 is the version the suite is verified on; these
-    # legs report portability without blocking a merge.
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-      - run: pytest -q
 
   audit:
     name: rule-corpus audit
@@ -84,8 +68,7 @@ jobs:
       # Publishes the parse state of the shipped rule corpus on every push, so
       # the thesis evidence (plan.md S0.10) can never go stale unnoticed.
       - name: Audit the shipped rules
-        run: |
-          python tools/audit_rules.py src | tee audit.md >> "$GITHUB_STEP_SUMMARY"
+        run: python tools/audit_rules.py src | tee audit.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

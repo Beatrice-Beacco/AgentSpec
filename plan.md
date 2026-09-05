@@ -41,16 +41,13 @@ Goal: a clean, tested, reproducible base to build on.
       `tests/test_enforcement.py` (11 tests), `tests/test_rule_parsing.py` (14 tests).
       *Accept:* ✅ `.venv/bin/pytest -q` → **17 passed, 8 xfailed**; 25 tests collected.
 - [x] **S0.9** Add `requirements-dev.txt` and a GitHub Actions workflow. ✅ 2026-09-04
-      Three jobs: `test` (3.12, required), `compat` (3.11/3.13, `continue-on-error`
-      — portability info without red CI), `audit` (publishes the rule-corpus parse
-      state to the run summary on every push, feeding S0.10).
+      Two jobs: `test` (matrix 3.11/3.12/3.13, all required) and `audit` (publishes
+      the rule-corpus parse state to the run summary on every push, feeding S0.10).
       Dropped `langchain-community` and `langchain-experimental` from the test path
       — `FakeListLLM` is in `langchain-core`, so CI installs 43 packages in ~5s
       instead of pulling SQLAlchemy and aiohttp.
-      *Accept:* ✅ a clean venv built from `requirements-dev.txt` runs the suite green
-      (`30 passed, 9 xfailed`); every workflow step verified locally first.
-      ⚠️ **GitHub disables Actions on forks by default** — enable it once in the
-      repo's Actions tab or no run will ever appear.
+      *Accept:* ✅ [run #1](https://github.com/Beatrice-Beacco/AgentSpec/actions/runs/33972706004)
+      green on all four jobs in ~20s each.
 - [ ] **S0.10** Commit the audit output to `docs/baseline-audit.md` (generated, dated).
       This is the thesis's Chapter 3 evidence — freeze it now, before we change anything.
       *Accept:* file exists with the tables and the exact commit SHA it was generated from.
@@ -341,3 +338,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-04 | S0.8 | Added a `Makefile` (`make test` / `test-verbose` / `test-why` / `audit` / `venv`) after hitting `.venv/bin/pytest` path errors from the wrong cwd. Found a 9th grammar defect while verifying it: `ANY` is a **dead token** — declared at `AgentSpec.g4:9`, never referenced by the `event` parser rule at `:55`, so `trigger any` cannot parse, even though `Rule.triggered` implements the `any` wildcard at runtime. Now probe #9. |
 | 2026-09-04 | S0.13 | Built the test bench (`make ui`): rule editor with live parse-checking, rule library, per-rule "why" panel, predicate prober, 8 worked examples, help page. Two findings while validating the examples. (1) A rule that fails to parse does **not** silently no-op — `Rule.from_text` accepts it with no error listener, then `RuleInterpreter` re-parses at *enforcement* time with one and raises `ValueError`, so a typo crashes the agent mid-run rather than at load. Worse than fail-open. (2) `enforce none` cannot demonstrate order dependence (it returns CONTINUE and never short-circuits); `skip` before `stop` gives SKIPPED and the reverse gives STOPPED. Both examples corrected and pinned by `tests/test_ui_examples.py`. Suite now 30 passed, 9 xfailed. |
 | 2026-09-04 | S0.9 | `requirements-dev.txt` is now the single source of truth (Makefile + CI both read it). Trimmed the test-path dependencies: `FakeListLLM` lives in `langchain-core`, so `langchain-community` and `langchain-experimental` are no longer needed — a clean install drops from 69 packages to 43 and takes ~5s. CI has three jobs; every step was run locally in a throwaway venv before being written into the workflow. |
+| 2026-09-04 | S0.9 | CI run #1 green on 3.11, 3.12 and 3.13 (~20s per job). The compat legs were pushed as `continue-on-error` because only 3.12 was verified locally; now that all three pass they are promoted to a single required matrix — a job that always passes but can never fail is not a signal. Actions turned out to be enabled on the fork already, so the "forks disable Actions" caveat did not bite. |
