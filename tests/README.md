@@ -26,6 +26,7 @@ make test
 | `make test-why` | why each grammar xfail fails |
 | `make test-parsing` | grammar probes with the real ANTLR errors |
 | `make audit` | parse-check every shipped `.ar` / `.rule` file |
+| `make ui` | the test bench — try rules interactively (see `ui/README.md`) |
 | `make venv` | build `.venv` from scratch with pinned deps |
 | `make help` | list all targets |
 
@@ -39,7 +40,7 @@ Expected:
 
 ```
 .................xxxxxxxx                                                [100%]
-17 passed, 9 xfailed in 0.08s
+30 passed, 9 xfailed in 0.10s
 ```
 
 `x` = **xfail**, an *expected* failure. The 9 xfails are grammar limitations we
@@ -372,6 +373,10 @@ predicate logic. `test_first_matching_rule_decides` documents rather than
 endorses: a permissive rule ahead of a restrictive one wins purely by position.
 That order dependence is one of the properties Cedar removes — `forbid` always
 wins, whatever the order (plan.md **S2.8**).
+
+**`test_ui_examples.py`** (13 tests) — every worked example in the test bench must
+produce the verdict its help page claims, so the docs can't drift from behaviour.
+Also covers the bench's path guard.
 
 **`test_rule_parsing.py`** (15 tests) — 6 things the grammar accepts, 9 it
 rejects. Every rejected case is syntax that appears in the repo's own rule files

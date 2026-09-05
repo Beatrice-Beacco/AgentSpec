@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) — installing"
 	@$(VENV)/bin/pip install -q pytest
 
-test: $(PYTEST)  ## run the whole suite (expect: 17 passed, 8 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 30 passed, 9 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
