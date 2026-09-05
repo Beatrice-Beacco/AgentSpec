@@ -15,6 +15,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
+# The repo root too, so `import agentguard` works: pytest puts tests/ on the
+# path, not the directory above it.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from langchain.tools import Tool                       # noqa: E402
 from langchain_core.language_models.fake import FakeListLLM  # noqa: E402

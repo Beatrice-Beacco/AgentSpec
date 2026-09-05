@@ -262,7 +262,7 @@ def initialize_controlled_agent(
             "Somehow both `agent` and `agent_path` are None, "
             "this should never happen."
         )
-    return ControlledAgentExecutor.from_agent_and_tools(
+    return _executor_class().from_agent_and_tools(
         agent=agent_obj,
         tools=tools,
         rules=rules,
@@ -270,4 +270,27 @@ def initialize_controlled_agent(
         tags=tags_,
         **kwargs,
     )
+
+
+def _executor_class():
+    """Which guard engine to build: AGENTGUARD=cedar picks the Cedar one.
+
+    Read here rather than at import so a single process can build one of each,
+    which is what the bench's compare mode (plan.md S2.10) needs. The import is
+    function-local because agentguard imports *this* module.
+    """
+    import os
+    import sys
+
+    if os.environ.get("AGENTGUARD", "legacy").strip().lower() != "cedar":
+        return ControlledAgentExecutor
+
+    # agentguard/ lives at the repo root, which is not necessarily on sys.path:
+    # src/ modules are imported flatly, so the entry point may well have added
+    # only src/. Same wart as tests/conftest.py, same reason.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from agentguard.executor import CedarControlledAgentExecutor
+    return CedarControlledAgentExecutor
 
