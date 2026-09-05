@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 91 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 122 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -32,6 +32,10 @@ test-parsing: $(PYTEST)  ## just the grammar probes, with real ANTLR errors
 
 test-schema: $(PYTEST)  ## just the Cedar schema tests, named
 	@$(PYTEST) -v tests/test_schema.py
+
+test-cedar: $(PYTEST)  ## force the whole suite onto the Cedar engine (S2.7 target)
+	@AGENTGUARD=cedar $(PYTEST) -q; \
+	echo "expect 12 failures until S2.7 -- legacy-rule tests the two-policy set cannot cover"
 
 validate:  ## check every policies/**/*.cedar against the schema
 	@$(PY) tools/validate_policies.py

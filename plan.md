@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.7 (wire Cedar into the executor).
+**Current position:** Sprint 1, Step S1.8 (Cedar panel in the bench).
 
 ---
 
@@ -130,10 +130,18 @@ Resolve every unknown here, before writing real code.
       cleanly and then crashes the resolver.
       *Accept:* ✅ `make validate` green; `tests/test_core_policies.py` (13 tests)
       reaches both verdicts through the real file and carries `stop` back out.
-- [ ] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
-      one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`.
-      *Accept:* `smoke_test.py` passes **both** scenarios with `AGENTGUARD=cedar` set,
-      producing the same verdicts as the original engine.
+- [x] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
+      one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`. ✅ 2026-09-05
+      Overrides exactly one method — `validate_and_enforce` — so the ReAct loop, the
+      enforcement classes and the observation text are shared and a verdict difference
+      is a difference in *deciding*. Seams for S2.1–S2.6 are marked in place.
+      *Accept:* ✅ scenarios A and B (`smoke_test.py`'s, now
+      `tests/test_enforcement.py`'s) pass under `AGENTGUARD=cedar` with the same
+      verdicts; `tests/test_cedar_executor.py` (31 tests) runs the comparison itself
+      rather than asserting it twice by hand.
+      **`make test-cedar` forces the whole suite onto Cedar: 110/122 pass already.**
+      The 12 failures are all legacy-rule tests the two-policy set cannot cover — the
+      S2.7 worklist, measured rather than guessed.
 
 - [ ] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
       show Allow/Deny and the raw `diagnostics` for the same input the legacy engine
@@ -379,3 +387,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.5 | First real schema landed, namespaced `AgentGuard` per thesis §C.2 — the spikes were namespace-free, and paying that cost now beats rewriting the corpus at S3.4. Kept strictly smaller than §C.2 with each omission annotated by the step that adds it, so the file records what is *deferred* rather than pretending to be finished. Added `tools/validate_policies.py` as the executable form of the S2.5 requirement ("refuse to start on failure") — it exits non-zero, so it doubles as a CI gate. One find while writing the tests: the schema also rejects an **unnamespaced** `Action::"invoke"`, so the namespace cannot be half-adopted by accident. Left the `flags: Set<String>` hole open deliberately and pinned it with a test that must break at S2.2. |
 | 2026-09-05 | env | The Windows checkout could not run the suite at all: `.venv` was the upstream environment (LangChain 1.4, Python 3.14) and LangChain 0.3.x cannot import under 3.14 — `Chain.dict()` shadows `dict` when PEP 649 evaluates `Optional[dict[str, Any]]`, so `langchain.chains.base` fails at class creation. Rebuilt `.venv` on 3.12.14 from `requirements-dev.txt`. One genuine portability bug surfaced: `test_rule_writes_are_confined_to_the_library` compared a native path against a `/`-separated literal. Fixed; suite green on Windows. |
 | 2026-09-05 | S1.6 | Two policies, and a finding that came out of writing the `@source` annotation honestly. The walking skeleton's rule (stop on `destuctive_os_inst`) is **not** in the shipped corpus: the nearest match, `pythonrepl.ar#index8`, also requires `involve_system_file` and only asks the user. That is the norm — **24 of the 26 rules in `pythonrepl.ar` enforce `user_inspection`**, and of the two that `stop`, one is `is_malware`, whose predicate is never registered (S0.12). The shipped PythonREPL corpus has exactly **one working hard stop**. Second: Cedar validates policy logic but treats annotations as opaque strings, so `@advice("stopp")` type-checks and then crashes the resolver at decision time — the same silent-failure shape as AgentSpec's. Added an annotation lint to `tools/validate_policies.py`; the lattice moves to `agentguard/advice.py` at S2.4. |
+| 2026-09-05 | S1.7 | Cedar decides, end to end. Two findings, both about failing **closed**. (1) When Cedar cannot evaluate a request it returns `Decision.NoDecision` and puts the cause in `diagnostics.errors` — it does not raise. A malformed entity store does exactly this. Any engine that reads "not Deny" as permission turns an internal fault into a **silent allow**, which is the failure mode this project exists to remove; `decide()` treats NoDecision-or-errors as `stop`. (2) The tool name reaches the request from the model's own output, so it is attacker-influenced whenever the task prompt is. Interpolated raw into `Tool::"..."` a crafted name closes the uid early — verified: it yields `failed to parse schema from request`, so unescaped it is a denial of service rather than a bypass, but only because of finding (1). Escaped at the boundary anyway; a parser is not an access control. Also worth recording: under Cedar the policy set comes from `policies/`, not from the `rules=` argument, so `test_no_rules_means_no_interference` legitimately changes meaning — S2.7 has to decide what "no rules" means for an engine whose policies are ambient. |
