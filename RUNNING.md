@@ -35,19 +35,30 @@ it pulls `ai2thor` (a Unity simulator, ~hundreds of MB, needs a display) which
 you only need for the embodied experiments. Install the pinned set instead:
 
 ```bash
-.venv/bin/pip install "antlr4-python3-runtime==4.13" "langchain==0.3.25" "langchain-openai" "langchain-community<0.3.27" "langchain-experimental<0.4"
+make venv          # or: .venv/bin/pip install -r requirements-dev.txt
 ```
 
-This resolves to a working environment:
+`requirements-dev.txt` is the single source of truth — the Makefile and CI both
+read it. It pins exactly what the tests and the bench need, verified on 3.12:
 
-| package | version |
-|---|---|
-| langchain | 0.3.25 |
-| langchain-core | 0.3.86 |
-| langchain-community | 0.3.25 |
-| langchain-experimental | 0.3.4 |
-| langchain-openai | 0.3.35 |
-| antlr4-python3-runtime | 4.13.0 |
+| package | version | why |
+|---|---|---|
+| antlr4-python3-runtime | 4.13.0 | the generated lexer/parser runtime |
+| langchain | 0.3.25 | `AgentExecutor`, `agents.loading` |
+| langchain-core | 0.3.86 | `AgentAction`/`AgentFinish`, `FakeListLLM` |
+| pydantic | 2.13.5 | `Rule`, `RuleState`, `Action` are models |
+| flask | 3.1.3 | the test bench (`make ui`) |
+| pytest | 9.1.1 | the suite |
+
+Note what is **absent**: `langchain-community` and `langchain-experimental`.
+Nothing on the test or bench path imports them (`FakeListLLM` lives in
+`langchain-core`), and they drag in SQLAlchemy and aiohttp for no benefit. Add
+them only if you run `src/demos.py`, `src/gmail_assistant.py`, or the real
+`PythonREPL`:
+
+```bash
+.venv/bin/pip install "langchain-community==0.3.25" "langchain-experimental==0.3.4" langchain-openai
+```
 
 > The README's "working version" list is inconsistent — it mixes LangChain 0.3.x
 > with `langchain-classic` 1.0.1, which belong to different major lines. The code

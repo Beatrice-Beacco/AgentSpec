@@ -17,7 +17,7 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from langchain.tools import Tool                       # noqa: E402
-from langchain_community.llms.fake import FakeListLLM  # noqa: E402
+from langchain_core.language_models.fake import FakeListLLM  # noqa: E402
 
 from controlled_agent_excector import initialize_controlled_agent  # noqa: E402
 from rule import Rule                                              # noqa: E402

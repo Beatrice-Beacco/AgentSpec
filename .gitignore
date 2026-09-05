@@ -6,3 +6,7 @@ openai.sh
 __pycache__/
 *.pyc
 .DS_Store
+
+# CI byproducts
+junit.xml
+audit.md

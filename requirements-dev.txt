@@ -1,0 +1,24 @@
+# Everything CI and the test suite need, pinned to versions verified on
+# Python 3.12. Deliberately NOT requirement.txt: that file is unpinned and
+# lists ai2thor, which needs a GPU and a display and cannot run in CI.
+#
+# Direct dependencies only -- pip resolves the rest. Pin these when you change
+# them, and re-run `make test` before committing.
+
+# --- rule language ---------------------------------------------------------
+antlr4-python3-runtime==4.13.0   # generated lexer/parser runtime
+
+# --- agent framework -------------------------------------------------------
+# langchain-core carries FakeListLLM, which is what drives the suite. We do NOT
+# depend on langchain-community: nothing on the test or bench path imports it,
+# and it drags in SQLAlchemy/aiohttp for no benefit. src/demos.py and
+# src/gmail_assistant.py still use it -- install it separately if you run those.
+langchain==0.3.25
+langchain-core==0.3.86
+pydantic==2.13.5
+
+# --- test bench (ui/) ------------------------------------------------------
+flask==3.1.3
+
+# --- tests -----------------------------------------------------------------
+pytest==9.1.1

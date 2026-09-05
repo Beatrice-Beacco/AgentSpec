@@ -28,7 +28,7 @@ if SRC not in sys.path:
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
 from langchain.tools import Tool
-from langchain_community.llms.fake import FakeListLLM
+from langchain_core.language_models.fake import FakeListLLM
 
 from spec_lang.AgentSpecLexer import AgentSpecLexer
 from spec_lang.AgentSpecParser import AgentSpecParser
