@@ -17,6 +17,12 @@ langchain==0.3.25
 langchain-core==0.3.86
 pydantic==2.13.5
 
+# --- policy engine ---------------------------------------------------------
+# Python bindings for Cedar. cedarpy's version tracks the Cedar engine it wraps
+# (4.8.x here); the Rust crate is further ahead at 4.12, but nothing we use --
+# is_authorized, validate_policies, policies_to_json_str -- is newer than 4.8.
+cedarpy==4.8.7
+
 # --- test bench (ui/) ------------------------------------------------------
 flask==3.1.3
 

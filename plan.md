@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 0 complete. Next: Sprint 1, Step S1.1 (Cedar spike).
+**Current position:** Sprint 1, Step S1.3 (schema validation spike).
 
 ---
 
@@ -85,16 +85,18 @@ Goal: a clean, tested, reproducible base to build on.
 Goal: the smallest possible end-to-end path where **Cedar** makes the decision.
 Resolve every unknown here, before writing real code.
 
-- [ ] **S1.1** `pip install cedarpy`; write `spikes/hello_cedar.py` that authorizes a
-      hard-coded request against a hard-coded policy.
-      *Accept:* prints `Allow` for one request and `Deny` for another.
-- [ ] **S1.2** ⚠️ **Spike the annotation question.** Can we read an arbitrary `@advice("...")`
-      annotation off the policies named in `diagnostics.reasons` from Python?
-      Try `diagnostics.id_annotations_by_reason` first.
-      *Accept:* `spikes/annotations.py` prints the advice string for a denying policy —
-      **or** documents in `docs/spikes.md` that it can't, and which fallback we take
-      (side-table parsed at load time / Cedar CLI JSON / PyO3 wrapper).
-      *This blocks the whole advice design. Do it on day one of the sprint.*
+- [x] **S1.1** `spikes/hello_cedar.py` — the smallest Cedar decision. ✅ 2026-09-05
+      Written in the PARC shape the thesis proposes (`Agent` / `invoke` / `Tool` /
+      `context.flags`), not the Cedar docs' example, so it is a real precursor to
+      `agentguard/request.py`. `make spike-hello`.
+      *Accept:* ✅ Allow for `print(6*7)`, Deny for `os.remove(...)`.
+- [x] **S1.2** ⚠️ **The annotation question — answered.** ✅ 2026-09-05
+      `diagnostics.id_annotations_by_reason` returns **only `@id`**, so the plan's
+      first choice fails. `policies_to_json_str()` returns **every** annotation,
+      keyed by the same synthetic ids `diagnostics.reasons` uses — so the join is
+      direct. Decision recorded in [`docs/spikes.md`](docs/spikes.md); none of the
+      three fallbacks the plan listed are needed. `make spike-annotations`.
+      *Accept:* ✅ prints the advice for a denying policy and resolves the lattice.
 - [ ] **S1.3** Spike schema validation: write a deliberately broken policy (typo'd
       attribute) and confirm `validate_policies()` catches it.
       *Accept:* `spikes/validation.py` prints the validation error.
@@ -347,3 +349,5 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S0.10 | Audit tool now emits provenance (commit SHA, branch, date, Python/ANTLR versions, dirty flag) and repo-relative paths, so `docs/baseline-audit.md` is citable rather than just a table of numbers. `make audit-freeze` regenerates it. |
 | 2026-09-05 | S0.11 | Profiler landed. **77.6% of AgentSpec's guard cost is re-parsing rule text** (0.135 ms/step), against 18.4% evaluating predicates and 4.0% enforcement — because `verify_and_enforce` re-lexes and re-parses every triggered rule's raw text on every single action. Pure waste: the rules never change between steps. This is the strongest RQ5 result available before Cedar exists, and it is an argument for the *architecture*, not just the language. |
 | 2026-09-05 | S0.12 | Expected one fail-open mode; found four. (1) **Silent acceptance** — a bad rule loads and then raises `ValueError` mid-run. (2) **Silent truncation** — `trigger Gmail.SendMail` loads as event `Gmail`, so the rule arms on a *different tool than written*: the most dangerous of the four, since it fails silently and permanently. (3) **Internal crash** — a *two-token* comment (`// index 0`) breaks ANTLR recovery hard enough that `Rule.from_text` dies with `AttributeError: 'RuleParser' object has no attribute 'event'`, while a *one-token* comment (`//index1`) is accepted; identical-looking comments behave differently by word count. (4) **Unregistered predicates** — 17 of the names used by `pythonrepl.ar` are defined in Python but never added to `predicate_table`, including `is_malware`, the corpus's very first rule. Checked whether the grammar's 36 predicates and the registry had diverged: they have not, and that is now a test. |
+| 2026-09-05 | S1.1 | Cedar reaches Allow and Deny in AgentSpec's own PARC shape. Confirms M1 concretely: `destuctive_os_inst` cannot run inside a policy (Cedar is pure and total), so it runs in Python and arrives as `context.flags` — detection in Python, decision in Cedar. |
+| 2026-09-05 | S1.2 | **Unblocked, but not the way the plan assumed.** `diagnostics.id_annotations_by_reason` carries only `@id` — the name is accurate and the plan misread it. `policies_to_json_str()` carries every annotation, keyed by the same `policy0/1/2` ids `diagnostics.reasons` returns, so the side-table joins directly and is built by cedarpy's own Cedar parser rather than a regex. None of the three fallbacks the plan listed are needed. Second finding: **Cedar does not return determining policies in source order** — for a two-forbid decision it returned `['policy2','policy1']`. Anything reading "the first determining policy" would be reading an unspecified ordering; the lattice join makes it irrelevant by construction. That is the concrete mechanism behind M2, and it hands S2.8 its property to test. |

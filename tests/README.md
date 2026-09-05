@@ -27,6 +27,7 @@ make test
 | `make test-parsing` | grammar probes with the real ANTLR errors |
 | `make audit` | parse-check every shipped `.ar` / `.rule` file |
 | `make profile` | time the suite and report per-phase latency |
+| `make spikes` | run the Cedar spikes (S1.1, S1.2) |
 | `make ui` | the test bench — try rules interactively (see `ui/README.md`) |
 | `make venv` | build `.venv` from scratch with pinned deps |
 | `make help` | list all targets |
@@ -41,7 +42,7 @@ Expected:
 
 ```
 .................xxxxxxxx                                                [100%]
-38 passed, 13 xfailed in 0.15s
+51 passed, 13 xfailed in 0.19s
 ```
 
 `x` = **xfail**, an *expected* failure. The 13 xfails are recorded defects we
@@ -374,6 +375,12 @@ predicate logic. `test_first_matching_rule_decides` documents rather than
 endorses: a permissive rule ahead of a restrictive one wins purely by position.
 That order dependence is one of the properties Cedar removes — `forbid` always
 wins, whatever the order (plan.md **S2.8**).
+
+**`test_spikes.py`** (13 tests) — pins the Cedar findings in `docs/spikes.md`:
+that `@advice` is reachable via `policies_to_json_str()` and *not* via
+`id_annotations_by_reason`, that the annotation ids join to
+`diagnostics.reasons`, and that the advice lattice is order-independent. Skipped
+if `cedarpy` is missing.
 
 **`test_fail_open.py`** (15 tests) — the four ways a malformed rule gets past load
 time: silent acceptance, silent truncation of a dotted trigger, an `AttributeError`
