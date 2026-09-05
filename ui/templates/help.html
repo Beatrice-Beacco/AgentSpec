@@ -131,11 +131,27 @@ used in a rule without regenerating the parser.</p>
   <tr><th>Page won't load</th><td>run <code>make ui</code> from the repo root; it binds 127.0.0.1:5000 only</td></tr>
 </table>
 
+<h2>The Cedar decision panel</h2>
+<p>Every run also asks the Cedar engine about the same call, against the policy set
+in <code>policies/</code>. It is a decision, not a second agent run, so what you see
+is exactly what <code>agentguard</code> would act on:</p>
+<table>
+  <tr><th>Allow / Deny</th><td>Cedar's own answer, and the enforcement outcome it resolves to</td></tr>
+  <tr><th>agrees / differs</th><td>against the legacy verdict above. A disagreement is the interesting result, not a bug in the bench</td></tr>
+  <tr><th><code>context.flags</code></th><td>what the Python sensors materialised — the impure half of the split. Cedar expressions are pure, so a regex like <code>destuctive_os_inst</code> runs here and arrives as a flag</td></tr>
+  <tr><th><code>diagnostics.reasons</code></th><td>the policies that determined the decision, with their <code>@advice</code> and the AgentSpec rule they came from</td></tr>
+</table>
+<p>The panel currently knows one sensor and two policies, so expect it to differ from
+the legacy engine on anything else — that gap is the S2.1/S2.7 worklist. Two things
+worth trying: <b>example 3</b> (no rules loaded) still gets a Cedar Deny, because the
+policy set is ambient rather than passed in; and <b>example 7</b> (a rule that does not
+parse) takes the legacy run down with an ERROR while Cedar still decides.</p>
+
 <h2>What changes as the thesis progresses</h2>
-<p>The <b>Cedar decision</b> panel is a placeholder until <code>plan.md</code> S1.7.
-After that it shows the Allow/Deny, the policies named in
-<code>diagnostics.reasons</code>, and the resolved advice — so you can compare the
-two engines on the same input, side by side, in one place.</p>
+<p>An engine <b>toggle</b> and a compare-both mode land at <code>plan.md</code> S2.10;
+a session/taint viewer at S4.8. Until then the run itself always goes through the
+engine <code>$AGENTGUARD</code> selects (shown in the header), and the Cedar panel is
+shown either way.</p>
 
 </main>
 </body>

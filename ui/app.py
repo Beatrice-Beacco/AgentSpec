@@ -19,6 +19,8 @@ import engine                                          # noqa: E402
 from examples import EXAMPLES                          # noqa: E402
 from engine import REPO_ROOT, predicate_table          # noqa: E402
 
+import agentguard                                      # noqa: E402
+
 app = Flask(__name__)
 
 # Rule files may only be read or written under these roots. The bench is
@@ -78,7 +80,11 @@ def state():
         "library": _library(),
         "examples": EXAMPLES,
         "predicates": sorted(predicate_table),
-        "engine": "legacy",          # flips to "cedar" after plan.md S1.7
+        # Which engine the *run* goes through. The Cedar panel is shown either
+        # way -- it decides the same call independently -- but with
+        # AGENTGUARD=cedar the "Why - per rule" panel describes rules that no
+        # longer decide anything, so the header has to say so.
+        "engine": "cedar" if agentguard.enabled() else "legacy",
     })
 
 
@@ -118,7 +124,11 @@ def run():
         return jsonify({"verdict": "ERROR", "error": traceback.format_exc(),
                         "output": str(exc), "tool_calls": [], "steps": [],
                         "trace": "", "rules": [], "explain": [],
-                        "cedar": {"status": "not_implemented"}}), 200
+                        "cedar": engine.cedar_decision(
+                            body.get("user_input", ""),
+                            body.get("tool_name", "python_repl"),
+                            body.get("tool_input", ""),
+                            body.get("intermediate_steps") or [])}), 200
 
 
 @app.get("/api/rule")

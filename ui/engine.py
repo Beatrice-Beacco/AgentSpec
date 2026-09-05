@@ -24,6 +24,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
+if REPO_ROOT not in sys.path:                  # so `import agentguard` resolves
+    sys.path.insert(0, REPO_ROOT)
 
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
@@ -202,6 +204,83 @@ def explain(rules, user_input, tool_name, tool_input, intermediate_steps):
     return report
 
 
+# --------------------------------------------------------------------- cedar
+
+#: Cedar's advice, expressed in the verdict vocabulary the bench already uses,
+#: so the two panels can be read against each other without a translation step.
+#: `user_inspection` has no fixed answer -- it depends on the approve toggle --
+#: so it stays named rather than being resolved to one of the others.
+ADVICE_VERDICT = {
+    "allow": "ALLOWED",
+    "skip": "SKIPPED",
+    "stop": "STOPPED",
+    "user_inspection": "ASKS THE USER",
+    "llm_self_reflect": "RE-PLANS",
+}
+
+
+def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
+    """What the Cedar engine decides about the same call the legacy engine ran.
+
+    Deliberately a decision and not a second agent run: the point of the panel
+    is to see Allow/Deny and the policies behind it next to the legacy verdict,
+    and running the agent twice would double the moving parts for no extra
+    information. The engine toggle and the verdict diff are S2.10.
+
+    Never raises. The bench exists to look at failures, so a Cedar failure has
+    to be visible in the panel rather than take the whole run down.
+    """
+    try:
+        from agentguard import executor as ag              # noqa: PLC0415
+    except ImportError as exc:                             # pragma: no cover
+        return {"status": "unavailable",
+                "note": f"cedarpy is not installed ({exc})."}
+
+    try:
+        bundle = ag.load_bundle()
+    except Exception as exc:                               # noqa: BLE001
+        # A policy set that does not validate stops the engine loading at all.
+        # That is the intended behaviour (plan.md S2.5), so report it as a
+        # finding rather than an outage.
+        return {"status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+    from langchain_core.agents import AgentAction          # noqa: PLC0415
+    from agent import Action                               # noqa: PLC0415
+    from state import RuleState                            # noqa: PLC0415
+
+    action = Action.from_langchain(
+        AgentAction(tool=tool_name, tool_input=tool_input, log="")
+    )
+    state = RuleState(action=action, agent=None,
+                      intermediate_steps=intermediate_steps or [],
+                      user_input=user_input)
+
+    try:
+        flags = ag.run_sensors(state)
+        verdict = ag.decide(bundle, state)
+    except Exception as exc:                               # noqa: BLE001
+        return {"status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "status": "ok",
+        "decision": verdict.decision,
+        "advice": verdict.advice,
+        "verdict": ADVICE_VERDICT.get(verdict.advice, verdict.advice.upper()),
+        "flags": list(flags),
+        "sensors": sorted(ag.SENSOR_NAMES),
+        "errors": list(verdict.errors),
+        "reasons": [
+            {"policy": pid,
+             "id": bundle.name_for(pid),
+             "advice": bundle.advice_for(pid) if verdict.decision == "Deny" else None,
+             "source": bundle.source_for(pid)}
+            for pid in verdict.policy_ids
+        ],
+        "request": ag.build_request(tool_name, flags),
+        "entities": ag.build_entities(tool_name),
+    }
+
+
 # ---------------------------------------------------------------------- run
 
 def react_script(tool_name, tool_input, final="done"):
@@ -279,10 +358,8 @@ def run(rule_text, user_input, tool_name, tool_input,
         "error": error,
         "rules": [{"id": e["id"], "errors": e["errors"]} for e in rules],
         "explain": explain(rules, user_input, tool_name, tool_input, intermediate_steps),
-        # Cedar lands in Sprint 1/2 (plan.md S1.7, S2.5). The shape is fixed now
-        # so the UI does not need restructuring when it does.
-        "cedar": {"status": "not_implemented",
-                  "note": "Cedar decisions appear here after plan.md S1.7."},
+        # The same call, decided by Cedar against policies/ (plan.md S1.8).
+        "cedar": cedar_decision(user_input, tool_name, tool_input, intermediate_steps),
     }
 
 

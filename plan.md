@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.8 (Cedar panel in the bench).
+**Current position:** Sprint 1 complete. Next: Sprint 2, Step S2.1 (sensor registry).
 
 ---
 
@@ -143,13 +143,21 @@ Resolve every unknown here, before writing real code.
       The 12 failures are all legacy-rule tests the two-policy set cannot cover — the
       S2.7 worklist, measured rather than guessed.
 
-- [ ] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
+- [x] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
       show Allow/Deny and the raw `diagnostics` for the same input the legacy engine
-      just ran, so the two are visible side by side.
-      *Accept:* `make ui` shows a real Cedar verdict for example 1.
+      just ran, so the two are visible side by side. ✅ 2026-09-05
+      Shows the decision, the enforcement outcome it resolves to, an agrees/differs
+      badge against the legacy verdict, the materialised `context.flags`, and each
+      determining policy with its `@advice` and `@source`. A decision, not a second
+      agent run. The engine toggle and full compare mode stay with S2.10.
+      *Accept:* ✅ example 1 → **Deny · resolves to STOPPED · agrees**, naming
+      `@no_destructive_os_call`; example 3 → **Deny · differs — legacy said ALLOWED**.
+      Pinned by `tests/test_ui_examples.py`.
 
-**Sprint 1 exit:** the same smoke test passes through either engine. Screenshot it —
-it goes in the thesis.
+**Sprint 1 exit:** ✅ 2026-09-05 — the same scenarios pass through either engine
+(`make test-cedar`: 110/122 of the *whole* suite already), and the bench shows both
+verdicts on one screen. Screenshot the bench on example 1 (agrees) and example 3
+(differs) — the pair is the thesis figure, not just one of them.
 
 ---
 
@@ -388,3 +396,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | env | The Windows checkout could not run the suite at all: `.venv` was the upstream environment (LangChain 1.4, Python 3.14) and LangChain 0.3.x cannot import under 3.14 — `Chain.dict()` shadows `dict` when PEP 649 evaluates `Optional[dict[str, Any]]`, so `langchain.chains.base` fails at class creation. Rebuilt `.venv` on 3.12.14 from `requirements-dev.txt`. One genuine portability bug surfaced: `test_rule_writes_are_confined_to_the_library` compared a native path against a `/`-separated literal. Fixed; suite green on Windows. |
 | 2026-09-05 | S1.6 | Two policies, and a finding that came out of writing the `@source` annotation honestly. The walking skeleton's rule (stop on `destuctive_os_inst`) is **not** in the shipped corpus: the nearest match, `pythonrepl.ar#index8`, also requires `involve_system_file` and only asks the user. That is the norm — **24 of the 26 rules in `pythonrepl.ar` enforce `user_inspection`**, and of the two that `stop`, one is `is_malware`, whose predicate is never registered (S0.12). The shipped PythonREPL corpus has exactly **one working hard stop**. Second: Cedar validates policy logic but treats annotations as opaque strings, so `@advice("stopp")` type-checks and then crashes the resolver at decision time — the same silent-failure shape as AgentSpec's. Added an annotation lint to `tools/validate_policies.py`; the lattice moves to `agentguard/advice.py` at S2.4. |
 | 2026-09-05 | S1.7 | Cedar decides, end to end. Two findings, both about failing **closed**. (1) When Cedar cannot evaluate a request it returns `Decision.NoDecision` and puts the cause in `diagnostics.errors` — it does not raise. A malformed entity store does exactly this. Any engine that reads "not Deny" as permission turns an internal fault into a **silent allow**, which is the failure mode this project exists to remove; `decide()` treats NoDecision-or-errors as `stop`. (2) The tool name reaches the request from the model's own output, so it is attacker-influenced whenever the task prompt is. Interpolated raw into `Tool::"..."` a crafted name closes the uid early — verified: it yields `failed to parse schema from request`, so unescaped it is a denial of service rather than a bypass, but only because of finding (1). Escaped at the boundary anyway; a parser is not an access control. Also worth recording: under Cedar the policy set comes from `policies/`, not from the `rules=` argument, so `test_no_rules_means_no_interference` legitimately changes meaning — S2.7 has to decide what "no rules" means for an engine whose policies are ambient. |
+| 2026-09-05 | S1.8 | Panel wired, and it immediately earned its keep: **example 3 disagrees**. "No rules loaded" is AgentSpec's control case — an empty rule list means nothing can fire — but AgentGuard's policy set is *ambient*, loaded from `policies/` rather than passed in, so the same call is denied. Neither engine is wrong; the two have different notions of where policy lives, and S2.7 has to pick one deliberately. **Example 7** is the other one worth looking at: a rule that does not parse takes the AgentSpec run down mid-flight (verdict ERROR) while Cedar still returns a decision — RQ6 visible in the UI rather than argued in prose. Panel is a decision, not a second agent run; the engine toggle and the verdict diff stay with S2.10. |
