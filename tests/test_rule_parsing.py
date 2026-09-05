@@ -70,9 +70,18 @@ SUPPORTED = {
 }
 
 
+def _report(source, errors):
+    """Failure message that shows the rule and what ANTLR said about it."""
+    listing = "\n".join(f"    {n:>2} | {line}" for n, line
+                        in enumerate(source.splitlines(), 1))
+    complaints = "\n".join(f"    - {e}" for e in errors)
+    return f"\n{listing}\n\n  {len(errors)} syntax error(s):\n{complaints}"
+
+
 @pytest.mark.parametrize("source", SUPPORTED.values(), ids=list(SUPPORTED))
 def test_supported_syntax_parses(source):
-    assert parse_errors(source) == []
+    errors = parse_errors(source)
+    assert errors == [], _report(source, errors)
 
 
 # ---------------------------------------------------------------- limitations
@@ -127,5 +136,9 @@ LIMITATIONS = {
     ids=list(LIMITATIONS),
 )
 def test_known_grammar_limitation(source):
-    """Currently fails. Flip to a plain assertion when S3.1 lands."""
-    assert parse_errors(source) == []
+    """Currently fails. Flip to a plain assertion when S3.1 lands.
+
+    Run with `--runxfail` to see the actual ANTLR errors instead of just `x`.
+    """
+    errors = parse_errors(source)
+    assert errors == [], _report(source, errors)

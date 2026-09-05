@@ -135,6 +135,11 @@ accepts and rejects today. The 8 rejections are `xfail(strict=True)` on purpose:
 when S3.1 fixes the grammar they become XPASS *failures*, forcing the file to be
 updated in the same commit rather than drifting out of date.
 
+**See [`tests/README.md`](tests/README.md)** for the full command cheat-sheet: how
+to watch enforcement happen (`AGENTSPEC_VERBOSE=1 pytest -s`), how to see why each
+xfail fails (`pytest -rxX`, `pytest --runxfail`), how to run a single test, and
+what to do when something breaks.
+
 Make sure you can run this, break a rule deliberately, and watch it fail.
 
 ### Writing your own rule

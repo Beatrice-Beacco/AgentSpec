@@ -13,7 +13,7 @@ Ported from smoke_test.py (S0.8).
 """
 import pytest
 
-from conftest import BENIGN_INPUT, DESTRUCTIVE_INPUT, TOOL_NAME, react_script
+from conftest import BENIGN_INPUT, DESTRUCTIVE_INPUT, TOOL_NAME, react_script, show
 from rule import Rule
 
 
@@ -39,6 +39,7 @@ def test_destructive_action_is_blocked(agent_factory, tool_calls):
     agent = agent_factory([BLOCK_DELETION], react_script(DESTRUCTIVE_INPUT))
 
     result = agent.invoke("Delete the unimportant txt file")
+    show(result, tool_calls)
 
     assert tool_calls == [], "the tool ran despite the rule firing"
     assert "stopped by" in result["output"]
@@ -50,6 +51,7 @@ def test_benign_action_is_allowed(agent_factory, tool_calls):
     agent = agent_factory([BLOCK_DELETION], react_script(BENIGN_INPUT, "42"))
 
     result = agent.invoke("What is 6 times 7?")
+    show(result, tool_calls)
 
     assert tool_calls == [BENIGN_INPUT]
     assert "stopped by" not in result["output"]
@@ -61,6 +63,7 @@ def test_no_rules_means_no_interference(agent_factory, tool_calls):
     agent = agent_factory([], react_script(DESTRUCTIVE_INPUT))
 
     result = agent.invoke("Delete the unimportant txt file")
+    show(result, tool_calls)
 
     assert tool_calls == [DESTRUCTIVE_INPUT]
     assert result["output"] == "done"
@@ -75,6 +78,7 @@ def test_enforce_stop_ends_the_run(agent_factory, tool_calls):
     )
 
     result = agent.invoke("anything")
+    show(result, tool_calls)
 
     assert tool_calls == []
     assert "stopped by" in result["output"]
@@ -92,6 +96,7 @@ def test_enforce_skip_drops_the_action_but_continues(agent_factory, tool_calls):
     )
 
     result = agent.invoke("anything")
+    show(result, tool_calls)
 
     assert tool_calls == []
     steps = result["intermediate_steps"]
@@ -112,6 +117,7 @@ def test_enforce_none_lets_the_action_through(agent_factory, tool_calls):
     )
 
     result = agent.invoke("anything")
+    show(result, tool_calls)
 
     assert tool_calls == [BENIGN_INPUT]
     assert result["output"] == "42"
@@ -129,6 +135,7 @@ def test_first_matching_rule_decides(agent_factory, tool_calls):
 
     agent = agent_factory([permissive, restrictive], react_script(BENIGN_INPUT))
     result = agent.invoke("anything")
+    show(result, tool_calls)
 
     assert tool_calls == []
     assert "stopped by" in result["output"]

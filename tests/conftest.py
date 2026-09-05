@@ -26,6 +26,11 @@ from rule import Rule                                              # noqa: E402
 # the event to the tool name verbatim, so the two must stay in sync.
 TOOL_NAME = "python_repl"
 
+# AGENTSPEC_VERBOSE=1 makes the executor print its ReAct trace (thought,
+# action, observation) so you can watch enforcement happen. Needs `pytest -s`
+# to reach the terminal -- pytest captures stdout otherwise. See tests/README.md.
+VERBOSE = os.environ.get("AGENTSPEC_VERBOSE") == "1"
+
 
 @pytest.fixture
 def tool_calls():
@@ -48,6 +53,8 @@ def recording_tool(tool_calls):
     """
     def _run(command: str) -> str:
         tool_calls.append(command)
+        if VERBOSE:
+            print(f"\n  >>> TOOL REACHED: {command!r}")
         return "OK"
 
     return Tool(
@@ -72,10 +79,31 @@ def agent_factory(recording_tool):
             FakeListLLM(responses=llm_script),
             agent="zero-shot-react-description",
             rules=rules,
-            verbose=False,
+            verbose=VERBOSE,
         )
 
     return _make
+
+
+def show(result, tool_calls):
+    """Print the outcome of a run when AGENTSPEC_VERBOSE=1. No-op otherwise.
+
+    Needed because the interesting part is not always in the chain trace. The
+    `skip` path in ControlledAgentExecutor._iter_next_step yields an AgentStep
+    directly without calling run_manager.on_agent_action, so verbose=True never
+    prints it -- the only evidence a skip happened is in intermediate_steps.
+    """
+    if not VERBOSE:
+        return
+    print("\n  --- outcome ---")
+    print(f"  tool calls        : {tool_calls or 'NONE (blocked before the tool)'}")
+    print(f"  final output      : {result['output'][:70]!r}")
+    steps = result.get("intermediate_steps", [])
+    print(f"  intermediate steps: {len(steps)}")
+    for i, (action, observation) in enumerate(steps, 1):
+        print(f"    [{i}] action     : {action.tool}({action.tool_input!r})")
+        print(f"        observation: {str(observation).strip()[:100]!r}")
+    print()
 
 
 # ------------------------------------------------------------------ scripts
