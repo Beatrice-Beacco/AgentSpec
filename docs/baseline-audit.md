@@ -5,9 +5,9 @@
 | | |
 |---|---|
 | generated | 2026-09-05 |
-| commit | `22da6bb7e75aeb5ece21829baf91ce9662753b7b` **(working tree dirty)** |
+| commit | `8718b8fe1abdb711c5208a7a385979888b8f2ca6` |
 | branch | `dev-foued` |
-| source tree | `src` |
+| source tree | `src` (clean at this commit) |
 | python | 3.12.8 |
 | antlr4 runtime | installed |
 

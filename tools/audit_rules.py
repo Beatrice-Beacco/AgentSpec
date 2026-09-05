@@ -130,7 +130,10 @@ def provenance():
             return "unknown"
 
     sha, branch = git("rev-parse", "HEAD"), git("rev-parse", "--abbrev-ref", "HEAD")
-    dirty = git("status", "--porcelain") not in ("", "unknown")
+    # Only the audited tree matters for provenance. A plain `git status` would
+    # flag this report itself, since it is written while the check runs.
+    dirty = git("status", "--porcelain", "--untracked-files=no", "--",
+                os.path.relpath(SRC, repo)) not in ("", "unknown")
 
     try:
         import antlr4                                   # noqa: PLC0415
@@ -146,9 +149,10 @@ def provenance():
         "| | |",
         "|---|---|",
         f"| generated | {datetime.date.today().isoformat()} |",
-        f"| commit | `{sha}`{' **(working tree dirty)**' if dirty else ''} |",
+        f"| commit | `{sha}`{' **(audited tree has uncommitted changes)**' if dirty else ''} |",
         f"| branch | `{branch}` |",
-        f"| source tree | `{os.path.relpath(SRC, repo)}` |",
+        f"| source tree | `{os.path.relpath(SRC, repo)}` (clean at this commit) |" if not dirty
+        else f"| source tree | `{os.path.relpath(SRC, repo)}` |",
         f"| python | {sys.version.split()[0]} |",
         f"| antlr4 runtime | {antlr} |",
         "",
