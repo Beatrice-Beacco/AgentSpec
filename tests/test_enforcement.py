@@ -163,7 +163,12 @@ class TestTriggerMatching:
         assert self.RULE.triggered(TOOL_NAME, "anything") is True
 
     def test_any_event_triggers_on_everything(self):
-        rule = Rule.from_text(rule_text("catch_all", "true", "none").replace(
-            f"trigger\n    {TOOL_NAME}", "trigger\n    any"
-        ))
+        """The `any` wildcard works at runtime -- but only if you bypass the parser.
+
+        Rule is constructed directly rather than via from_text: `trigger any`
+        does not parse (ANY is a dead token, see test_rule_parsing.py), and
+        from_text would silently hand back a Rule anyway. Going through it
+        would make this a test of the fail-open bug, not of the wildcard.
+        """
+        rule = Rule(id="catch_all", event="any", raw="")
         assert rule.triggered("literally_any_tool", None) is True

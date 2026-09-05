@@ -119,6 +119,13 @@ LIMITATIONS = {
         "apollo/*.rule uses & to conjoin predicates; check is an implicit AND "
         "over whitespace-separated names only",
     ),
+    "any trigger (dead token)": (
+        rule(trigger="any"),
+        "ANY is declared as a lexer token (AgentSpec.g4:9) but the `event` "
+        "parser rule (:55) never references it, so `trigger any` cannot parse -- "
+        "yet Rule.triggered implements `event == 'any'` as a wildcard. The "
+        "documented catch-all trigger is unreachable through the grammar",
+    ),
     "llm_self_examine": (
         rule(enforce="llm_self_examine"),
         "the README documents llm_self_examine; the grammar implements "

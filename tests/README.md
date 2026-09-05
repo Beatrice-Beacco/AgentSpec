@@ -4,11 +4,32 @@ Everything here runs **offline** — no OpenAI key, no benchmark datasets, no
 network. A scripted `FakeListLLM` drives the agent and a recording stub replaces
 `PythonREPL`, so the suite finishes in well under a second.
 
-All commands are from the **repo root**.
+> **Run everything from the repo root** — `cd` into `AgentSpec/` first. The venv
+> lives at `AgentSpec/.venv`, so `.venv/bin/pytest` only resolves from there.
+> `conftest.py` also locates `src/` relative to itself.
 
 ---
 
 ## 1. Quick start
+
+```bash
+cd /path/to/AgentSpec
+make test
+```
+
+`make` wraps the common commands so you never have to type a venv path:
+
+| Target | Does |
+|---|---|
+| `make test` | the whole suite |
+| `make test-verbose` | enforcement tests with the agent trace |
+| `make test-why` | why each grammar xfail fails |
+| `make test-parsing` | grammar probes with the real ANTLR errors |
+| `make audit` | parse-check every shipped `.ar` / `.rule` file |
+| `make venv` | build `.venv` from scratch with pinned deps |
+| `make help` | list all targets |
+
+The equivalent raw command, if you prefer:
 
 ```bash
 .venv/bin/pytest -q
@@ -18,10 +39,10 @@ Expected:
 
 ```
 .................xxxxxxxx                                                [100%]
-17 passed, 8 xfailed in 0.08s
+17 passed, 9 xfailed in 0.08s
 ```
 
-`x` = **xfail**, an *expected* failure. The 8 xfails are grammar limitations we
+`x` = **xfail**, an *expected* failure. The 9 xfails are grammar limitations we
 deliberately recorded; they are not broken tests. See §4.
 
 Exit code `0` means green. If pytest isn't found:
@@ -217,7 +238,7 @@ E             - L3:9 mismatched input '.' expecting 'check'
 ```
 
 Numbered listing on top, ANTLR's complaint underneath. Drop the `::...` suffix
-to see all eight at once.
+to see all nine at once.
 
 ### Trying your own rule
 
@@ -279,7 +300,7 @@ For a whole file or the shipped corpus, use the audit tool instead:
 - `-vv` stops pytest truncating the assertion diff.
 - `--pdb` drops into a debugger at the failure point.
 
-**`XPASS(strict)` is a real failure, and it's on purpose.** The 8 xfails are
+**`XPASS(strict)` is a real failure, and it's on purpose.** The 9 xfails are
 `strict=True`. If you fix the grammar (plan.md **S3.1**), they start passing and
 pytest reports:
 
@@ -327,7 +348,7 @@ endorses: a permissive rule ahead of a restrictive one wins purely by position.
 That order dependence is one of the properties Cedar removes — `forbid` always
 wins, whatever the order (plan.md **S2.8**).
 
-**`test_rule_parsing.py`** (14 tests) — 6 things the grammar accepts, 8 it
+**`test_rule_parsing.py`** (15 tests) — 6 things the grammar accepts, 9 it
 rejects. Every rejected case is syntax that appears in the repo's own rule files
 or README, which is why 21 of the 42 shipped rules don't parse
 (`tools/audit_rules.py`).
@@ -341,5 +362,6 @@ or README, which is why 21 of the 42 shipped rules don't parse
 | `ModuleNotFoundError: No module named 'rule'` | ran pytest from outside the repo root; `conftest.py` resolves `src/` relative to itself, so run from the root |
 | `AGENTSPEC_VERBOSE=1` prints nothing | you also need `-s` — pytest captures stdout by default |
 | `no tests ran` with a `[...]` test id | shell expanded the brackets; quote the id |
-| `pytest: command not found` | use `.venv/bin/pytest`, or activate the venv first |
+| `pytest: command not found` | use `make test`, or `.venv/bin/pytest`, or activate the venv first |
+| `zsh: no such file or directory: .venv/bin/pytest` | you're not in the repo root — `cd` into `AgentSpec/` |
 | stray `python_repl` / `destuctive_os_inst` lines | upstream debug prints in `src/interpreter.py`, harmless |
