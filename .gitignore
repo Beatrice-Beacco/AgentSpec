@@ -3,6 +3,8 @@
 openai.sh
 # --- local dev ---
 .venv/
+# machine-specific interpreter path for the bench (gitignore has no inline comments)
+.claude/launch.json
 __pycache__/
 *.pyc
 .DS_Store

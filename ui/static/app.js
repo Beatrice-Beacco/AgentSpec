@@ -129,6 +129,60 @@ function renderOutcome(res) {
   $('outcome').innerHTML = html;
 }
 
+// The same call, decided by Cedar against policies/ (plan.md S1.8). Shown next
+// to the legacy verdict rather than instead of it: a disagreement between the
+// two is the interesting output of this bench, not an error in it.
+function renderCedar(c, legacyVerdict) {
+  const panel = (body, tint) =>
+    `<div class="panel" style="margin-top:14px${tint ? ';background:var(--code)' : ''}">
+       <h2>Cedar decision <span class="muted" style="text-transform:none">— policies/, decided independently</span></h2>
+       ${body}</div>`;
+
+  if (c.status !== 'ok') {
+    $('cedar').innerHTML = panel(
+      `<p class="err small" style="margin:0">${esc(c.note || 'no decision')}</p>`, true);
+    return;
+  }
+
+  const deny = c.decision === 'Deny';
+  const agrees = c.verdict === legacyVerdict;
+
+  const flags = c.flags.length
+    ? c.flags.map(f => `<span class="pill bad" style="margin:2px 3px 2px 0">${esc(f)}</span>`).join('')
+    : `<span class="muted small">none of ${c.sensors.length} sensor` +
+      `${c.sensors.length === 1 ? '' : 's'} fired</span>`;
+
+  const reasons = c.reasons.length
+    ? '<table style="margin-top:8px"><tr><th>policy</th><th>@advice</th><th>@source</th></tr>' +
+      c.reasons.map(r =>
+        `<tr><td class="mono">@${esc(r.id)}</td>` +
+        `<td>${r.advice ? `<span class="pill ${r.advice === 'stop' ? 'bad' : 'warn'}">${esc(r.advice)}</span>` : '<span class="muted">—</span>'}</td>` +
+        `<td class="mono small">${esc(r.source || '—')}</td></tr>`).join('') + '</table>'
+    : '<p class="small muted" style="margin-top:8px">no determining policies</p>';
+
+  const errors = c.errors.length
+    ? `<p class="err small">engine errors (failing closed): ${esc(c.errors.join('; '))}</p>` : '';
+
+  $('cedar').innerHTML = panel(`
+    <div class="row" style="gap:14px;align-items:center">
+      <span class="verdict ${deny ? 'STOPPED' : 'ALLOWED'}">${esc(c.decision)}</span>
+      <span class="small">resolves to <b>${esc(c.verdict)}</b></span>
+      <span class="pill ${agrees ? 'ok' : 'bad'}">${agrees
+        ? 'agrees with the legacy verdict'
+        : `differs — legacy said ${esc(legacyVerdict)}`}</span>
+    </div>
+    ${errors}
+    <p class="small" style="margin:10px 0 4px"><b>context.flags</b>
+      <span class="muted">— what the Python sensors materialised</span></p>
+    <div>${flags}</div>
+    <p class="small" style="margin:12px 0 0"><b>diagnostics.reasons</b>
+      <span class="muted">— the policies that determined it</span></p>
+    ${reasons}
+    <details style="margin-top:10px"><summary>Raw request &amp; entities</summary>
+      <pre>${esc(JSON.stringify({ request: c.request, entities: c.entities }, null, 2))}</pre>
+    </details>`);
+}
+
 const WHY_VERDICT = {
   ALLOWED: 'the tool was reached — no rule blocked this action',
   STOPPED: 'a rule fired with enforce stop; the run ended before the tool',
@@ -158,15 +212,7 @@ async function run() {
   renderOutcome(res);
   $('trace').textContent = res.trace || '(no trace)';
 
-  const c = res.cedar || {};
-  $('cedar').innerHTML = c.status === 'not_implemented'
-    ? `<div class="panel" style="margin-top:14px;background:var(--code)">
-         <h2>Cedar decision</h2>
-         <p class="small muted" style="margin:0">${esc(c.note || '')}
-         This panel will show the Allow/Deny, the policies in
-         <code>diagnostics.reasons</code>, and the resolved advice.</p></div>`
-    : `<div class="panel" style="margin-top:14px"><h2>Cedar decision</h2>
-         <pre>${esc(JSON.stringify(c, null, 2))}</pre></div>`;
+  renderCedar(res.cedar || {}, res.verdict);
 
   $('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }

@@ -75,6 +75,73 @@ def test_broken_rule_is_reported_before_it_is_run():
     assert any(entry["errors"] for entry in loaded)
 
 
+# ------------------------------------------------------------ Cedar panel
+# plan.md S1.8. The panel decides the same call independently of the run, so
+# these assert on the decision, not on a second agent invocation.
+
+def example(prefix):
+    return next(e for e in EXAMPLES if e["name"].startswith(prefix))
+
+
+def test_example_1_shows_a_real_cedar_verdict():
+    """S1.8's acceptance test."""
+    cedar = run_example(example("1."))["cedar"]
+    assert cedar["status"] == "ok"
+    assert cedar["decision"] == "Deny"
+    assert cedar["advice"] == "stop"
+    assert cedar["verdict"] == "STOPPED"
+    assert cedar["flags"] == ["destuctive_os_inst"]
+    assert [r["id"] for r in cedar["reasons"]] == ["no_destructive_os_call"]
+    assert cedar["reasons"][0]["source"].startswith("agentspec:")
+
+
+def test_example_2_shows_the_allow():
+    """The false-positive half. A panel that only ever says Deny shows nothing."""
+    cedar = run_example(example("2."))["cedar"]
+    assert (cedar["decision"], cedar["advice"], cedar["flags"]) == ("Allow", "allow", [])
+
+
+def test_the_panel_never_takes_the_run_down():
+    """The bench exists to look at failures, so Cedar failures must be visible
+    in the panel rather than fatal to the page."""
+    for ex in EXAMPLES:
+        assert run_example(ex)["cedar"]["status"] == "ok", ex["name"]
+
+
+def test_example_3_is_where_the_engines_disagree():
+    """"No rules loaded" does not mean "no policies".
+
+    AgentSpec's rule list *is* its policy, so an empty list means nothing can
+    fire. AgentGuard's policy set is ambient -- loaded from policies/ -- so the
+    same input is still denied. A real semantic difference, surfaced by the
+    panel rather than argued about; S2.7 has to decide what to do with it.
+    """
+    result = run_example(example("3."))
+    assert result["verdict"] == "ALLOWED"
+    assert result["cedar"]["decision"] == "Deny"
+
+
+def test_example_7_decides_where_the_legacy_engine_crashes():
+    """A rule that does not parse takes the AgentSpec run down mid-flight
+    (S0.12). Cedar validates at load, so the same call still gets a decision."""
+    result = run_example(example("7."))
+    assert result["verdict"] == "ERROR"
+    assert result["cedar"]["status"] == "ok"
+    assert result["cedar"]["decision"] == "Deny"
+
+
+def test_the_header_reports_which_engine_runs(monkeypatch):
+    """With AGENTGUARD=cedar the "Why - per rule" panel describes rules that no
+    longer decide anything, so the header must not keep saying "legacy"."""
+    import app                                  # noqa: PLC0415
+
+    client = app.app.test_client()
+    monkeypatch.setenv("AGENTGUARD", "cedar")
+    assert client.get("/api/state").get_json()["engine"] == "cedar"
+    monkeypatch.setenv("AGENTGUARD", "legacy")
+    assert client.get("/api/state").get_json()["engine"] == "legacy"
+
+
 def test_rule_writes_are_confined_to_the_library():
     import app                                  # noqa: PLC0415
     with pytest.raises(ValueError):
