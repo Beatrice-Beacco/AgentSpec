@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Help — AgentSpec test bench</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>AgentSpec test bench</h1>
+  <span class="sub">help</span>
+  <nav><a href="/">Bench</a><a href="/help" class="on">Help</a></nav>
+</header>
+
+<main class="doc">
+
+<h2>What this is</h2>
+<p>A bench for the rule engine. You give it <b>rules</b> and <b>one action the agent
+wants to take</b>, and it tells you whether the action gets through, which rule
+stopped it, and <em>why</em>.</p>
+
+<p>It runs the real <code>ControlledAgentExecutor</code> — the same class the agent
+uses in production — but drives it with a scripted <code>FakeListLLM</code> instead of
+a real model. So there is <b>no API key, no cost, and no randomness</b>: the same
+input always gives the same verdict. That is what makes it usable as a regression
+tool after every step in <code>plan.md</code>.</p>
+
+<p class="hint">The tool is a stub that records its input and returns <code>"OK"</code>.
+Nothing you type is ever executed — <code>os.remove</code> in the action box deletes
+nothing.</p>
+
+<h2>The four boxes</h2>
+<table>
+  <tr><th>Box</th><th>Is</th><th>Maps to</th></tr>
+  <tr><td><b>Rules</b></td><td>One or more AgentSpec rules</td><td>the <code>rules=</code> list</td></tr>
+  <tr><td><b>User task</b></td><td>The human's original request</td><td><code>user_input</code></td></tr>
+  <tr><td><b>Tool name</b></td><td>Which tool the agent calls. Must match a rule's <code>trigger</code> exactly.</td><td><code>action.name</code></td></tr>
+  <tr><td><b>Proposed action</b></td><td>The code or command the agent wants to run</td><td><code>tool_input</code></td></tr>
+</table>
+<p><b>Prior steps</b> (collapsed) is <code>intermediate_steps</code> — the trajectory so
+far. Most code predicates ignore it; embodied ones read it. It becomes central in
+Sprint 4, when rules start reasoning about execution <em>paths</em>.</p>
+
+<h2>Reading the result</h2>
+<table>
+  <tr><th>Verdict</th><th>Means</th></tr>
+  <tr><td><span class="pill ok">ALLOWED</span></td><td>The tool was reached. No rule blocked it — either none fired, or one fired with <code>enforce none</code>.</td></tr>
+  <tr><td><span class="pill bad">STOPPED</span></td><td>A rule fired with <code>stop</code>. The run ended before the tool.</td></tr>
+  <tr><td><span class="pill warn">SKIPPED</span></td><td>A rule suppressed the action, but fed an observation back so the agent kept planning.</td></tr>
+  <tr><td><span class="pill mute">NO ACTION</span></td><td>The agent never proposed a tool call. Usually a malformed script.</td></tr>
+</table>
+
+<h3>“Why — per rule”</h3>
+<p>The panel that matters. For each rule it shows, in order:</p>
+<ol>
+  <li>whether the <b>trigger matched</b> this tool call</li>
+  <li>each <b>check</b> and what it evaluated to (with the raw value when the predicate is negated)</li>
+  <li>the <b>enforcement</b>, and whether the rule fires</li>
+</ol>
+<p>A rule fires only when the trigger matched <em>and</em> every check is true —
+<code>check</code> is an implicit AND. If your rule isn't firing, this panel tells
+you which half is wrong.</p>
+
+<h3>Probe all predicates</h3>
+<p>Runs every registered predicate ({{ predicates|length }} of them) against your
+input and shows which return true. Use it the other way round from normal: type an
+action first, see what fires, then write a rule around it.</p>
+
+<h2>Worked examples</h2>
+<p>Pick any of these from the <b>load an example</b> dropdown on the bench. They are
+ordered to build up — run them top to bottom the first time.</p>
+
+{% for ex in examples %}
+<h3>{{ ex.name }}</h3>
+<p>{{ ex.why }}</p>
+<p class="small"><b>Expect:</b> {{ ex.expect }}</p>
+<table>
+  <tr><th style="width:120px">task</th><td class="mono">{{ ex.user_input }}</td></tr>
+  <tr><th>tool</th><td class="mono">{{ ex.tool_name }}</td></tr>
+  <tr><th>action</th><td class="mono" style="white-space:pre-wrap">{{ ex.tool_input }}</td></tr>
+</table>
+{% if ex.rule_text %}<pre>{{ ex.rule_text }}</pre>{% else %}<p class="muted small">(no rules)</p>{% endif %}
+{% endfor %}
+
+<h2>Rule syntax</h2>
+<pre>rule @name                 &larr; identifier, no spaces
+trigger
+    python_repl            &larr; must equal the tool's .name EXACTLY
+check
+    involve_system_file    &larr; predicates, implicit AND
+    submit_post_request
+enforce
+    stop                   &larr; stop | skip | none | user_inspection | llm_self_reflect
+end</pre>
+<p>Prefix a check with <code>!</code> to negate it. Paste several rules into the box
+and they are evaluated in order — which matters, see example 8.</p>
+
+<h2>Known grammar limits</h2>
+<p>These are rejected by <code>AgentSpec.g4</code> even though the repo's own rule
+files and README use them. It is why 21 of the 42 shipped rules do not parse
+(<code>make audit</code>), and a large part of the case for Cedar.</p>
+<table>
+  <tr><th>You write</th><th>What happens</th></tr>
+  <tr><td><code>// a comment</code></td><td>no comment token exists; lexer error</td></tr>
+  <tr><td><code>check True</code></td><td>only lowercase <code>true</code> is a token</td></tr>
+  <tr><td><code>trigger Gmail.SendMail</code></td><td>events are bare identifiers; no dots</td></tr>
+  <tr><td><code>trigger A | B</code></td><td>no alternation operator</td></tr>
+  <tr><td><code>trigger turn on</code></td><td>no multi-word events (though the runtime supports them)</td></tr>
+  <tr><td><code>trigger any</code></td><td><code>ANY</code> is a dead token — declared, never used by the parser</td></tr>
+  <tr><td><code>check p &amp; q</code></td><td>no <code>&amp;</code>; separate the names with whitespace</td></tr>
+  <tr><td><code>enforce llm_self_examine</code></td><td>the README's name; the grammar wants <code>llm_self_reflect</code></td></tr>
+  <tr><td>a predicate not in the token list</td><td>the 36 names are baked into the grammar; adding one needs an ANTLR regen</td></tr>
+</table>
+<p class="hint"><b>And they fail open.</b> A rule with any of these errors still loads
+and simply never fires — <code>Rule.from_text</code> installs no error listener. Watch
+the red parse banner under the rules box; the bench surfaces what the framework
+swallows. Example 7 demonstrates it.</p>
+
+<h2>Registered predicates</h2>
+<p class="small">{{ predicates|length }} available. Anything not on this list cannot be
+used in a rule without regenerating the parser.</p>
+<p class="mono small">{{ predicates|join(' · ') }}</p>
+
+<h2>Shortcuts &amp; troubleshooting</h2>
+<table>
+  <tr><th>⌘/Ctrl + Enter</th><td>run</td></tr>
+  <tr><th>Rule never fires</th><td>check the trigger equals the tool name exactly; then check the “Why” panel for which predicate is false</td></tr>
+  <tr><th>Predicate raised</th><td>it wanted a different <code>intermediate_steps</code> shape — embodied ones expect <code>[{"action": "...", "success": true}]</code></td></tr>
+  <tr><th>Everything is ALLOWED</th><td>look at the parse banner; a rule that doesn't parse silently does nothing</td></tr>
+  <tr><th>Page won't load</th><td>run <code>make ui</code> from the repo root; it binds 127.0.0.1:5000 only</td></tr>
+</table>
+
+<h2>What changes as the thesis progresses</h2>
+<p>The <b>Cedar decision</b> panel is a placeholder until <code>plan.md</code> S1.7.
+After that it shows the Allow/Deny, the policies named in
+<code>diagnostics.reasons</code>, and the resolved advice — so you can compare the
+two engines on the same input, side by side, in one place.</p>
+
+</main>
+</body>
+</html>

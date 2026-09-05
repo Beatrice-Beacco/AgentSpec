@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing audit venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing audit ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -30,6 +30,10 @@ test-enforcement: $(PYTEST)  ## just the enforcement tests, named
 test-parsing: $(PYTEST)  ## just the grammar probes, with real ANTLR errors
 	@$(PYTEST) --runxfail -q tests/test_rule_parsing.py
 
+ui:  ## start the test bench at http://127.0.0.1:5000
+	@$(VENV)/bin/python -c "import flask" 2>/dev/null || $(VENV)/bin/pip install -q flask
+	@$(PY) ui/app.py
+
 audit:  ## parse-check every shipped .ar / .rule file
 	@$(PY) tools/audit_rules.py src
 
@@ -38,7 +42,7 @@ venv:  ## create .venv and install pinned deps
 	@$(VENV)/bin/pip install -q --upgrade pip
 	@$(VENV)/bin/pip install -q \
 		"langchain==0.3.25" "langchain-core==0.3.86" "langchain-community==0.3.25" \
-		"langchain-experimental==0.3.4" "antlr4-python3-runtime==4.13" pytest
+		"langchain-experimental==0.3.4" "antlr4-python3-runtime==4.13" pytest flask
 	@echo "venv ready — run: make test"
 
 clean:  ## remove caches

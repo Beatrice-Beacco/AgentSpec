@@ -55,6 +55,17 @@ Goal: a clean, tested, reproducible base to build on.
       *Accept:* `tests/test_fail_open.py::test_malformed_rule_is_rejected` xfails with a
       clear message. This test turns green in Sprint 2 — it's our headline RQ6 result.
 
+- [x] **S0.13** Build the **test bench** — a local web UI for exercising rules. ✅ 2026-09-04
+      `make ui` → <http://127.0.0.1:5000>. Edit rules with live parse-checking, load
+      from the shipped corpus, set a user task + proposed action, run it, and see the
+      verdict plus a per-rule "why" panel (trigger matched? each predicate's value?
+      which enforcement?). Includes a help page with 8 worked examples and a
+      predicate prober. Driven by `FakeListLLM`, so no API key and fully
+      deterministic — usable as a regression tool.
+      *Accept:* ✅ all 8 examples produce their documented verdict, asserted by
+      `tests/test_ui_examples.py`.
+      **Use this after every step from here on** (see W.4).
+
 **Sprint 0 exit:** green pytest suite, CI running, baseline audit + latency frozen in `docs/`.
 
 ---
@@ -88,6 +99,11 @@ Resolve every unknown here, before writing real code.
       one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`.
       *Accept:* `smoke_test.py` passes **both** scenarios with `AGENTGUARD=cedar` set,
       producing the same verdicts as the original engine.
+
+- [ ] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
+      show Allow/Deny and the raw `diagnostics` for the same input the legacy engine
+      just ran, so the two are visible side by side.
+      *Accept:* `make ui` shows a real Cedar verdict for example 1.
 
 **Sprint 1 exit:** the same smoke test passes through either engine. Screenshot it —
 it goes in the thesis.
@@ -130,6 +146,13 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       *(This is a free, high-value thesis result. Don't skip it.)*
 - [ ] **S2.9** Re-run the latency instrumentation with the Cedar engine.
       *Accept:* `expres/latency/cedar.jsonl`; sensors vs. decision split recorded.
+
+- [ ] **S2.10** Bench: add an **engine toggle** (legacy ⇄ cedar) and render the
+      resolved advice plus the policy ids from `diagnostics.reasons`. Add a
+      "compare both" mode that runs one input through both engines and diffs the
+      verdicts — this is how RQ1/RQ3 disagreements get found by hand.
+      *Accept:* toggling the engine on example 1 shows both verdicts and the
+      policies responsible.
 
 **Sprint 2 exit:** `agentguard/` is the real engine, both engines pass the same suite,
 RQ5 and RQ6 have preliminary numbers.
@@ -195,6 +218,12 @@ Goal: the headline contribution — catching harmful *paths*, not just harmful c
 - [ ] **S4.7** Formalise the expressiveness claim: which fragment of LTL-over-finite-traces
       do the session attributes capture, and what does the finite abstraction lose?
       *Accept:* one page in `docs/taint-model.md`. Be honest about the limits.
+
+- [ ] **S4.8** Bench: a **session/taint viewer** — show the taint set accumulating
+      across the steps in the "Prior steps" box, so a path-sensitive policy can be
+      debugged visually rather than by reading JSON.
+      *Accept:* loading a multi-step exfiltration case shows `read_secret` appearing,
+      then the policy firing on the later POST.
 
 **Sprint 4 exit:** cases the original provably cannot catch, that ours does, with numbers.
 
@@ -275,6 +304,9 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 - [ ] **W.2** Keep `docs/findings.md` as a running lab notebook — every surprise,
       every bug, every counterexample, dated. Findings evaporate if not written down.
 - [ ] **W.3** After each sprint: update this file, commit, and push `dev-foued`.
+- [ ] **W.4** After **every step**: run `make test`, then exercise the change in the
+      bench (`make ui`). If a step adds behaviour the bench cannot show, extend the
+      bench in the same commit — it is the primary way we look at this system.
 
 ---
 
@@ -299,3 +331,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-04 | S0.8 | Replaced `smoke_test.py` with a hermetic pytest suite: 25 tests, 17 pass + 8 strict-xfail. Tool execution is now a recording stub, so tests assert the tool was *reached* without running generated code. The 8 xfails are `strict=True`, so fixing the grammar in S3.1 will break them on XPASS and force an update in the same commit. Added a rule-order test documenting that AgentSpec's first-match-wins loop is order-dependent — the property Cedar removes (feeds S2.8). |
 | 2026-09-04 | S0.8 | Added `tests/README.md` (how to run the suite and read its output) and an `AGENTSPEC_VERBOSE=1` trace mode. Found while documenting it: the `skip` path is **invisible** in LangChain's verbose trace — `_iter_next_step` yields its `AgentStep` without calling `run_manager.on_agent_action`, so a skipped action is never printed. Only `intermediate_steps` records it. Carry into the Cedar engine as a thing to fix, not copy. |
 | 2026-09-04 | S0.8 | Added a `Makefile` (`make test` / `test-verbose` / `test-why` / `audit` / `venv`) after hitting `.venv/bin/pytest` path errors from the wrong cwd. Found a 9th grammar defect while verifying it: `ANY` is a **dead token** — declared at `AgentSpec.g4:9`, never referenced by the `event` parser rule at `:55`, so `trigger any` cannot parse, even though `Rule.triggered` implements the `any` wildcard at runtime. Now probe #9. |
+| 2026-09-04 | S0.13 | Built the test bench (`make ui`): rule editor with live parse-checking, rule library, per-rule "why" panel, predicate prober, 8 worked examples, help page. Two findings while validating the examples. (1) A rule that fails to parse does **not** silently no-op — `Rule.from_text` accepts it with no error listener, then `RuleInterpreter` re-parses at *enforcement* time with one and raises `ValueError`, so a typo crashes the agent mid-run rather than at load. Worse than fail-open. (2) `enforce none` cannot demonstrate order dependence (it returns CONTINUE and never short-circuits); `skip` before `stop` gives SKIPPED and the reverse gives STOPPED. Both examples corrected and pinned by `tests/test_ui_examples.py`. Suite now 30 passed, 9 xfailed. |

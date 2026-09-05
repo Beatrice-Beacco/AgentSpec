@@ -135,6 +135,23 @@ accepts and rejects today. The 8 rejections are `xfail(strict=True)` on purpose:
 when S3.1 fixes the grammar they become XPASS *failures*, forcing the file to be
 updated in the same commit rather than drifting out of date.
 
+## 4b. The test bench (a UI for trying rules)
+
+```bash
+make ui        # http://127.0.0.1:5000
+```
+
+A local page where you edit rules, type the action an agent wants to take, and see
+the verdict plus a per-rule breakdown of *why* it fired or didn't — trigger matched?
+each predicate's value? which enforcement? It also has a predicate prober and a
+help page with 8 worked examples. No API key: the agent is scripted, so the same
+input always gives the same answer.
+
+Use it after every step in `plan.md` (standing task W.4). Details in
+[`ui/README.md`](ui/README.md).
+
+---
+
 **See [`tests/README.md`](tests/README.md)** for the full command cheat-sheet: how
 to watch enforcement happen (`AGENTSPEC_VERBOSE=1 pytest -s`), how to see why each
 xfail fails (`pytest -rxX`, `pytest --runxfail`), how to run a single test, and
