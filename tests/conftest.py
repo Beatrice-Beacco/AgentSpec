@@ -6,6 +6,7 @@ module is imported. conftest.py is loaded first by pytest, so this is the
 right place for it.
 """
 import os
+import re
 import sys
 
 import pytest
@@ -30,6 +31,15 @@ TOOL_NAME = "python_repl"
 # action, observation) so you can watch enforcement happen. Needs `pytest -s`
 # to reach the terminal -- pytest captures stdout otherwise. See tests/README.md.
 VERBOSE = os.environ.get("AGENTSPEC_VERBOSE") == "1"
+
+
+@pytest.fixture(autouse=True)
+def _verbose_header():
+    """Label each test's block in the -s output, so runs aren't a wall of traces."""
+    if VERBOSE:
+        name = os.environ.get("PYTEST_CURRENT_TEST", "?").split("::")[-1].split(" ")[0]
+        print(f"\n{'=' * 72}\n=== {name}\n{'=' * 72}")
+    yield
 
 
 @pytest.fixture
@@ -74,6 +84,8 @@ def agent_factory(recording_tool):
     """
     def _make(rule_texts, llm_script):
         rules = [Rule.from_text(t) for t in rule_texts]
+        if VERBOSE:
+            print(f"  rules loaded      : {_describe(rules) or 'NONE - nothing can fire'}")
         return initialize_controlled_agent(
             [recording_tool],
             FakeListLLM(responses=llm_script),
@@ -83,6 +95,19 @@ def agent_factory(recording_tool):
         )
 
     return _make
+
+
+def _describe(rules):
+    """One-line summary per rule: @id, trigger, check, enforce."""
+    out = []
+    for r in rules:
+        fields = {}
+        for clause in ("trigger", "check", "enforce"):
+            m = re.search(rf"^{clause}\s*\n\s*(.+)$", r.raw, re.M)
+            fields[clause] = m.group(1).strip() if m else "?"
+        out.append(f"@{r.id} [on {fields['trigger']} if {fields['check']} "
+                   f"-> {fields['enforce']}]")
+    return "; ".join(out)
 
 
 def show(result, tool_calls):

@@ -146,6 +146,31 @@ The rule was evaluated (`destuctive_os_inst`) and declined to fire. This is the
 false-positive check — a guard that blocks everything would still pass the
 destructive test above.
 
+### Reading a full run
+
+Each test's block is labelled, and the header names the rules in play:
+
+```
+========================================================================
+=== test_no_rules_means_no_interference
+========================================================================
+  rules loaded      : NONE - nothing can fire
+```
+
+That `rules loaded` line is the first thing to check when an action you
+expected to be blocked wasn't. `test_no_rules_means_no_interference` runs the
+same `os.remove(...)` as Scenario A and lets it straight through **on purpose**
+— it's the control. Without it, a Scenario A pass wouldn't prove the *rule* did
+the blocking.
+
+Two other tells that no rule was consulted: no `python_repl` /
+`destuctive_os_inst` debug lines (upstream prints those only while evaluating a
+rule), and `intermediate steps: 1` rather than `0`.
+
+`Observation: OK` never means code ran. The tool is the recording stub from
+`conftest.py`, which appends to `tool_calls` and returns the literal string
+`"OK"` — so no file is ever deleted, in any test.
+
 ### The `--- outcome ---` block
 
 Every enforcement test ends with `show(result, tool_calls)` from `conftest.py`,
