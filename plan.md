@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.5 (first real schema).
+**Current position:** Sprint 1, Step S1.6 (first policy file).
 
 ---
 
@@ -113,9 +113,14 @@ Resolve every unknown here, before writing real code.
       A whole Cedar decision costs **less than AgentSpec spends on parsing alone**
       (0.1512 ms) and 3.3× less than its full guard path (0.1919 ms) — while doing
       more work: 3 policies, schema validation, order-independent result.
-- [ ] **S1.5** Write the first real schema `policies/schema.cedarschema` — just `Agent`,
-      `Tool`, `action invoke`, and a `context` with `flags: Set<String>`.
-      *Accept:* `validate_policies()` passes against a hand-written policy.
+- [x] **S1.5** Write the first real schema `policies/schema.cedarschema` — just `Agent`,
+      `Tool`, `action invoke`, and a `context` with `flags: Set<String>`. ✅ 2026-09-05
+      Namespaced `AgentGuard` per thesis §C.2, so the skeleton is a precursor and not
+      a throwaway. `tools/validate_policies.py` (`make validate`) is the load-time
+      gate S2.5 will call; `tests/test_schema.py` pins six malformed-policy classes
+      as rejected and the one known hole as still open.
+      *Accept:* ✅ `test_hand_written_policy_validates` — and both verdicts are
+      reachable through the real file, not just a validating string.
 - [ ] **S1.6** Write `policies/core.cedar` with two policies: a baseline `permit`, and a
       `forbid` for `destuctive_os_inst` carrying `@advice("stop")`.
 - [ ] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
@@ -364,3 +369,5 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.2 | **Unblocked, but not the way the plan assumed.** `diagnostics.id_annotations_by_reason` carries only `@id` — the name is accurate and the plan misread it. `policies_to_json_str()` carries every annotation, keyed by the same `policy0/1/2` ids `diagnostics.reasons` returns, so the side-table joins directly and is built by cedarpy's own Cedar parser rather than a regex. None of the three fallbacks the plan listed are needed. Second finding: **Cedar does not return determining policies in source order** — for a two-forbid decision it returned `['policy2','policy1']`. Anything reading "the first determining policy" would be reading an unspecified ordering; the lattice join makes it irrelevant by construction. That is the concrete mechanism behind M2, and it hands S2.8 its property to test. |
 | 2026-09-05 | S1.3 | Validation catches typo'd context and entity attributes, type mismatches, unknown entity types and unknown actions — all at load, none of which AgentSpec can detect at all. Unplanned bonus: the spike **answers S2.2 five weeks early**. The same misspelled flag is missed under `flags: Set<String>` (any string is a valid member, so the policy type-checks and silently never fires) and caught under `flags: { name: Bool, ... }`. A silently-never-firing safety rule is the exact failure mode S0.12 documented, so the record-of-`Bool` codegen is now evidence-backed rather than a preference. |
 | 2026-09-05 | S1.4 | 0.0579 ms mean / 0.0772 ms p99 per decision with a pre-parsed `PolicySet`. Passing policy text instead costs 2× — worth knowing before writing the engine, since it is the same mistake AgentSpec makes. Against S0.11: a whole Cedar decision is cheaper than AgentSpec's *parsing phase alone*, and 3.3× cheaper than its whole guard path, while evaluating three policies with schema validation and an order-independent result. RQ5's honest headline is still "the engine is free, detection is the cost" — this is a ratio, not a latency problem. |
+| 2026-09-05 | S1.5 | First real schema landed, namespaced `AgentGuard` per thesis §C.2 — the spikes were namespace-free, and paying that cost now beats rewriting the corpus at S3.4. Kept strictly smaller than §C.2 with each omission annotated by the step that adds it, so the file records what is *deferred* rather than pretending to be finished. Added `tools/validate_policies.py` as the executable form of the S2.5 requirement ("refuse to start on failure") — it exits non-zero, so it doubles as a CI gate. One find while writing the tests: the schema also rejects an **unnamespaced** `Action::"invoke"`, so the namespace cannot be half-adopted by accident. Left the `flags: Set<String>` hole open deliberately and pinned it with a test that must break at S2.2. |
+| 2026-09-05 | env | The Windows checkout could not run the suite at all: `.venv` was the upstream environment (LangChain 1.4, Python 3.14) and LangChain 0.3.x cannot import under 3.14 — `Chain.dict()` shadows `dict` when PEP 649 evaluates `Optional[dict[str, Any]]`, so `langchain.chains.base` fails at class creation. Rebuilt `.venv` on 3.12.14 from `requirements-dev.txt`. One genuine portability bug surfaced: `test_rule_writes_are_confined_to_the_library` compared a native path against a `/`-separated literal. Fixed; suite green on Windows. |

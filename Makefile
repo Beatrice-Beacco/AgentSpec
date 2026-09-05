@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 64 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 78 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -29,6 +29,12 @@ test-enforcement: $(PYTEST)  ## just the enforcement tests, named
 
 test-parsing: $(PYTEST)  ## just the grammar probes, with real ANTLR errors
 	@$(PYTEST) --runxfail -q tests/test_rule_parsing.py
+
+test-schema: $(PYTEST)  ## just the Cedar schema tests, named
+	@$(PYTEST) -v tests/test_schema.py
+
+validate:  ## check every policies/**/*.cedar against the schema
+	@$(PY) tools/validate_policies.py
 
 spikes: spike-hello spike-annotations spike-validation spike-latency  ## run every Cedar spike
 
