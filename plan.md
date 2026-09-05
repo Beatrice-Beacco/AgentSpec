@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 0, Step S0.10 (freeze the baseline audit in `docs/`).
+**Current position:** Sprint 0 complete. Next: Sprint 1, Step S1.1 (Cedar spike).
 
 ---
 
@@ -48,17 +48,22 @@ Goal: a clean, tested, reproducible base to build on.
       instead of pulling SQLAlchemy and aiohttp.
       *Accept:* ✅ [run #1](https://github.com/Beatrice-Beacco/AgentSpec/actions/runs/33972706004)
       green on all four jobs in ~20s each.
-- [ ] **S0.10** Commit the audit output to `docs/baseline-audit.md` (generated, dated).
-      This is the thesis's Chapter 3 evidence — freeze it now, before we change anything.
-      *Accept:* file exists with the tables and the exact commit SHA it was generated from.
-- [ ] **S0.11** Add latency instrumentation to `ControlledAgentExecutor._iter_next_step`:
-      time (LLM plan | rule parse | predicate eval | enforcement) per step, written as
-      JSONL to `expres/latency/baseline.jsonl` behind an env flag `AGENTSPEC_PROFILE=1`.
-      *Accept:* a smoke-test run produces a JSONL file with 4 timings per step.
-- [ ] **S0.12** Record the fail-open behaviour (B.3) as a failing/xfail test:
-      a malformed rule must be *rejected*, and currently isn't.
-      *Accept:* `tests/test_fail_open.py::test_malformed_rule_is_rejected` xfails with a
-      clear message. This test turns green in Sprint 2 — it's our headline RQ6 result.
+- [x] **S0.10** Freeze the audit as `docs/baseline-audit.md`. ✅ 2026-09-05
+      `tools/audit_rules.py` now emits a provenance header (date, commit SHA, branch,
+      Python and ANTLR versions, dirty-tree flag). `make audit-freeze` regenerates it.
+      *Accept:* ✅ committed with the SHA it was generated from.
+- [x] **S0.11** Latency instrumentation behind `AGENTSPEC_PROFILE=1`. ✅ 2026-09-05
+      `src/profiling.py` + hooks in `_iter_next_step` and `verify_and_enforce`.
+      `make profile` reports, `make profile-freeze` writes `docs/baseline-latency.md`.
+      *Accept:* ✅ 31 JSONL lines, four timings each.
+      **Result: 77.6% of guard time is `rule_parse`** — AgentSpec re-lexes and
+      re-parses every triggered rule's text on every action. Only 18.4% is actually
+      evaluating predicates. Cedar parses a `PolicySet` once (feeds RQ5 / S2.9).
+- [x] **S0.12** Record the fail-open behaviour as xfail tests. ✅ 2026-09-05
+      `tests/test_fail_open.py` — 4 strict xfails for what *should* happen, 7 passing
+      tests recording what does. Turns green at S2.5; this is RQ6.
+      *Accept:* ✅ `test_malformed_rule_is_rejected` xfails with the cause in its reason.
+      Found **four** distinct failure modes, not one — see the log below.
 
 - [x] **S0.13** Build the **test bench** — a local web UI for exercising rules. ✅ 2026-09-04
       `make ui` → <http://127.0.0.1:5000>. Edit rules with live parse-checking, load
@@ -339,3 +344,6 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-04 | S0.13 | Built the test bench (`make ui`): rule editor with live parse-checking, rule library, per-rule "why" panel, predicate prober, 8 worked examples, help page. Two findings while validating the examples. (1) A rule that fails to parse does **not** silently no-op — `Rule.from_text` accepts it with no error listener, then `RuleInterpreter` re-parses at *enforcement* time with one and raises `ValueError`, so a typo crashes the agent mid-run rather than at load. Worse than fail-open. (2) `enforce none` cannot demonstrate order dependence (it returns CONTINUE and never short-circuits); `skip` before `stop` gives SKIPPED and the reverse gives STOPPED. Both examples corrected and pinned by `tests/test_ui_examples.py`. Suite now 30 passed, 9 xfailed. |
 | 2026-09-04 | S0.9 | `requirements-dev.txt` is now the single source of truth (Makefile + CI both read it). Trimmed the test-path dependencies: `FakeListLLM` lives in `langchain-core`, so `langchain-community` and `langchain-experimental` are no longer needed — a clean install drops from 69 packages to 43 and takes ~5s. CI has three jobs; every step was run locally in a throwaway venv before being written into the workflow. |
 | 2026-09-04 | S0.9 | CI run #1 green on 3.11, 3.12 and 3.13 (~20s per job). The compat legs were pushed as `continue-on-error` because only 3.12 was verified locally; now that all three pass they are promoted to a single required matrix — a job that always passes but can never fail is not a signal. Actions turned out to be enabled on the fork already, so the "forks disable Actions" caveat did not bite. |
+| 2026-09-05 | S0.10 | Audit tool now emits provenance (commit SHA, branch, date, Python/ANTLR versions, dirty flag) and repo-relative paths, so `docs/baseline-audit.md` is citable rather than just a table of numbers. `make audit-freeze` regenerates it. |
+| 2026-09-05 | S0.11 | Profiler landed. **77.6% of AgentSpec's guard cost is re-parsing rule text** (0.135 ms/step), against 18.4% evaluating predicates and 4.0% enforcement — because `verify_and_enforce` re-lexes and re-parses every triggered rule's raw text on every single action. Pure waste: the rules never change between steps. This is the strongest RQ5 result available before Cedar exists, and it is an argument for the *architecture*, not just the language. |
+| 2026-09-05 | S0.12 | Expected one fail-open mode; found four. (1) **Silent acceptance** — a bad rule loads and then raises `ValueError` mid-run. (2) **Silent truncation** — `trigger Gmail.SendMail` loads as event `Gmail`, so the rule arms on a *different tool than written*: the most dangerous of the four, since it fails silently and permanently. (3) **Internal crash** — a *two-token* comment (`// index 0`) breaks ANTLR recovery hard enough that `Rule.from_text` dies with `AttributeError: 'RuleParser' object has no attribute 'event'`, while a *one-token* comment (`//index1`) is accepted; identical-looking comments behave differently by word count. (4) **Unregistered predicates** — 17 of the names used by `pythonrepl.ar` are defined in Python but never added to `predicate_table`, including `is_malware`, the corpus's very first rule. Checked whether the grammar's 36 predicates and the registry had diverged: they have not, and that is now a test. |

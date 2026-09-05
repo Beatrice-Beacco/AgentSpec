@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing audit ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing audit audit-freeze profile ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 30 passed, 9 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 38 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -36,6 +36,21 @@ ui:  ## start the test bench at http://127.0.0.1:5000
 
 audit:  ## parse-check every shipped .ar / .rule file
 	@$(PY) tools/audit_rules.py src
+
+profile:  ## time the suite and report per-phase latency
+	@rm -f expres/latency/baseline.jsonl
+	@AGENTSPEC_PROFILE=1 $(PYTEST) -q >/dev/null
+	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl
+
+profile-freeze:  ## regenerate docs/baseline-latency.md (thesis evidence)
+	@rm -f expres/latency/baseline.jsonl
+	@AGENTSPEC_PROFILE=1 $(PYTEST) -q >/dev/null
+	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl > docs/baseline-latency.md
+	@echo "wrote docs/baseline-latency.md"
+
+audit-freeze:  ## regenerate docs/baseline-audit.md (thesis evidence)
+	@$(PY) tools/audit_rules.py src > docs/baseline-audit.md 2>/dev/null
+	@echo "wrote docs/baseline-audit.md"
 
 venv:  ## create .venv from requirements-dev.txt
 	@python3 -m venv $(VENV)

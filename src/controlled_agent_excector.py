@@ -8,6 +8,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.agents import AgentAction, AgentFinish, AgentStep
 from langchain.agents.agent import ExceptionTool
 from interpreter import RuleInterpreter
+import profiling
 from rule import *
 from state import RuleState
 from enforcement import *
@@ -103,12 +104,14 @@ class ControlledAgentExecutor(AgentExecutor) :
         """
         try:
             intermediate_steps = self._prepare_intermediate_steps(intermediate_steps) 
+            profiling.begin_step(step=len(intermediate_steps))
             # Call the LLM to see what to do.
-            output = self._action_agent.plan(
-                intermediate_steps,
-                callbacks=run_manager.get_child() if run_manager else None,
-                **inputs,
-            )  
+            with profiling.phase("llm_plan"):
+                output = self._action_agent.plan(
+                    intermediate_steps,
+                    callbacks=run_manager.get_child() if run_manager else None,
+                    **inputs,
+                )  
             # with open("code_agent_exec", 'a') as f:
             #     o = { "prompt": inputs, "code": str(output)}
             #     f.write(json.dumps(o))
@@ -162,6 +165,7 @@ class ControlledAgentExecutor(AgentExecutor) :
         )
         # todo: need an adapter here.
         rule, action = self.validate_and_enforce(action, state) 
+        profiling.end_step(tool=action.name, fired=rule.id if rule else None)
         if action.is_skip():
             observation_text = f"after the enforcement of rule:\n{rule.raw}, the action is skipped by user" 
             yield AgentStep(action=output, observation=observation_text)

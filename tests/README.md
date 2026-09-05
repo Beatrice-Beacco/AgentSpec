@@ -26,6 +26,7 @@ make test
 | `make test-why` | why each grammar xfail fails |
 | `make test-parsing` | grammar probes with the real ANTLR errors |
 | `make audit` | parse-check every shipped `.ar` / `.rule` file |
+| `make profile` | time the suite and report per-phase latency |
 | `make ui` | the test bench — try rules interactively (see `ui/README.md`) |
 | `make venv` | build `.venv` from scratch with pinned deps |
 | `make help` | list all targets |
@@ -40,10 +41,10 @@ Expected:
 
 ```
 .................xxxxxxxx                                                [100%]
-30 passed, 9 xfailed in 0.10s
+38 passed, 13 xfailed in 0.15s
 ```
 
-`x` = **xfail**, an *expected* failure. The 9 xfails are grammar limitations we
+`x` = **xfail**, an *expected* failure. The 13 xfails are recorded defects we
 deliberately recorded; they are not broken tests. See §4.
 
 Exit code `0` means green. If pytest isn't found:
@@ -326,7 +327,7 @@ For a whole file or the shipped corpus, use the audit tool instead:
 - `-vv` stops pytest truncating the assertion diff.
 - `--pdb` drops into a debugger at the failure point.
 
-**`XPASS(strict)` is a real failure, and it's on purpose.** The 9 xfails are
+**`XPASS(strict)` is a real failure, and it's on purpose.** The 13 xfails are
 `strict=True`. If you fix the grammar (plan.md **S3.1**), they start passing and
 pytest reports:
 
@@ -373,6 +374,11 @@ predicate logic. `test_first_matching_rule_decides` documents rather than
 endorses: a permissive rule ahead of a restrictive one wins purely by position.
 That order dependence is one of the properties Cedar removes — `forbid` always
 wins, whatever the order (plan.md **S2.8**).
+
+**`test_fail_open.py`** (15 tests) — the four ways a malformed rule gets past load
+time: silent acceptance, silent truncation of a dotted trigger, an `AttributeError`
+that depends on a comment's word count, and predicates named in rules but never
+registered. Four strict xfails say what should happen; they turn green at S2.5.
 
 **`test_ui_examples.py`** (13 tests) — every worked example in the test bench must
 produce the verdict its help page claims, so the docs can't drift from behaviour.

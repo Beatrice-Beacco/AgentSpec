@@ -10,3 +10,6 @@ __pycache__/
 # CI byproducts
 junit.xml
 audit.md
+
+# raw profiler output (docs/baseline-latency.md is the frozen summary)
+expres/latency/
