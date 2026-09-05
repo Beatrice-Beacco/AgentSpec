@@ -18,17 +18,28 @@ works as a CI gate and as the precondition for S2.5's "refuse to start".
 """
 import argparse
 import glob
+import json
 import os
 import sys
 
 try:
-    from cedarpy import Schema, validate_policies
+    from cedarpy import Schema, policies_to_json_str, validate_policies
 except ImportError:                                     # pragma: no cover
     sys.exit("cedarpy is not installed -- pip install -r requirements-dev.txt")
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICY_DIR = os.path.join(REPO_ROOT, "policies")
 SCHEMA_PATH = os.path.join(POLICY_DIR, "schema.cedarschema")
+
+# The enforcement outcomes @advice may name, most restrictive first (thesis
+# §C.4). Cedar validates policy *logic* against the schema but treats every
+# annotation as an opaque string, so nothing but this check stands between a
+# typo'd @advice("stopp") and a crash in the resolver at decision time -- the
+# same shape of silent failure tests/test_fail_open.py records for AgentSpec.
+#
+# S2.4 gives the lattice a real home in agentguard/advice.py; import it from
+# there when it exists rather than keeping two copies.
+ADVICE_LATTICE = ["stop", "user_inspection", "llm_self_reflect", "skip", "allow"]
 
 
 def load_schema(path=SCHEMA_PATH):
@@ -44,15 +55,53 @@ def policy_files(paths=None):
     return sorted(glob.glob(os.path.join(POLICY_DIR, "**", "*.cedar"), recursive=True))
 
 
+def annotation_errors(text):
+    """Lint the annotations Cedar itself will not check.
+
+    Three rules, all about traceability of an enforcement outcome:
+
+      * every policy carries @id -- diagnostics.reasons returns synthetic ids
+        ("policy0", "policy1"), so without @id a decision cannot be attributed
+        to anything a human wrote;
+      * @advice, where present, names a real lattice element;
+      * @advice does not appear on a permit, where it would be silently
+        ignored (thesis §C.4 rule 1: an Allow resolves to `allow`).
+
+    An unannotated `forbid` is allowed: it defaults to `stop`, the safe end of
+    the lattice (docs/spikes.md S1.2). A typo'd one is not, because it would
+    reach the resolver and fail there instead.
+    """
+    parsed = json.loads(policies_to_json_str(text))
+    errors = []
+    for pid, body in sorted(parsed.get("staticPolicies", {}).items()):
+        anns = body.get("annotations", {})
+        name = anns.get("id", pid)
+        if "id" not in anns:
+            errors.append(f"{pid}: no @id -- the decision cannot be traced to a rule")
+        advice = anns.get("advice")
+        if advice is not None and advice not in ADVICE_LATTICE:
+            errors.append(
+                f"{name}: @advice(\"{advice}\") is not an enforcement outcome "
+                f"(expected one of {', '.join(ADVICE_LATTICE)})"
+            )
+        if advice is not None and body.get("effect") == "permit":
+            errors.append(
+                f"{name}: @advice on a permit has no effect -- advice is only "
+                "read off denying policies"
+            )
+    return errors
+
+
 def check(path, schema):
     """(ok, [message]) for one policy file."""
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
     result = validate_policies(text, schema)
-    if result.validation_passed:
-        return True, []
-    # Cedar prefixes errors with a bracketed severity; keep the useful half.
-    return False, [str(e).split("] ", 1)[-1] for e in result.errors]
+    if not result.validation_passed:
+        # Cedar prefixes errors with a bracketed severity; keep the useful half.
+        return False, [str(e).split("] ", 1)[-1] for e in result.errors]
+    errors = annotation_errors(text)
+    return not errors, errors
 
 
 def main(argv=None):
