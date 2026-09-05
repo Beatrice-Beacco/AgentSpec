@@ -1,0 +1,55 @@
+// AgentGuard -- the Cedar schema for AgentSpec's guard decisions (plan.md S1.5).
+//
+// This is the contract between the two halves of the architecture:
+//
+//   Python side   sensors run the AgentSpec predicates over user_input,
+//                 tool_input and intermediate_steps. Impure, arbitrary code.
+//   Cedar side    a decision over the *result* of that work. Pure and total --
+//                 no regex, no AST walking, no I/O.
+//
+// The schema is what makes the second half checkable. Every policy is validated
+// against it before the agent takes a single step, so the failure modes recorded
+// in tests/test_fail_open.py (a rule that loads fine and then never fires, or
+// crashes mid-run) become load-time errors instead. See docs/spikes.md S1.3 for
+// what the validator actually catches.
+//
+// Deliberately smaller than the thesis design (§C.2). Deferred, with the step
+// that adds it:
+//
+//   Session entity + Agent.session   S4.2   path sensitivity (taints, approvals)
+//   Agent.autonomy, Agent.model      S2.2   escalation policies need them
+//   Tool.name                        S2.2   the uid carries it for now
+//   context.targets / risk / step    S2.2   generated from the sensor registry
+//   action finish                    S2.7   `trigger finish` rules
+//
+// `flags: Set<String>` is also provisional and known to be the weaker of the two
+// options: S1.3 showed the validator cannot catch a misspelled *set member*, so a
+// typo'd flag name yields a policy that silently never fires. S2.2 replaces it
+// with a record of named Bools generated from the predicate registry, which does
+// catch it. It stays a set here because S1.5 asks for the smallest schema that
+// works, and swapping it is the point of the S2.2 comparison.
+
+namespace AgentGuard {
+
+  // The agent being guarded. One per run.
+  entity Agent = {
+    framework: String,          // "langchain" -- the only binding wired up so far
+  };
+
+  // The tool it is proposing to invoke. The uid is AgentSpec's tool name, so
+  // `trigger python_repl` compiles to resource == Tool::"python_repl".
+  entity Tool = {
+    kind: String,               // "code_exec" | "shell" | "http" | "actuator" | "read_only"
+    reversible: Bool,           // can the effect be undone?
+  };
+
+  // One proposed tool call. The AgentSpec `check` clause lands in context.flags:
+  // each predicate that fired contributes its name.
+  action invoke appliesTo {
+    principal: [Agent],
+    resource:  [Tool],
+    context: {
+      flags: Set<String>,
+    }
+  };
+}
