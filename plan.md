@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.6 (first policy file).
+**Current position:** Sprint 1, Step S1.7 (wire Cedar into the executor).
 
 ---
 
@@ -121,8 +121,15 @@ Resolve every unknown here, before writing real code.
       as rejected and the one known hole as still open.
       *Accept:* ✅ `test_hand_written_policy_validates` — and both verdicts are
       reachable through the real file, not just a validating string.
-- [ ] **S1.6** Write `policies/core.cedar` with two policies: a baseline `permit`, and a
-      `forbid` for `destuctive_os_inst` carrying `@advice("stop")`.
+- [x] **S1.6** Write `policies/core.cedar` with two policies: a baseline `permit`, and a
+      `forbid` for `destuctive_os_inst` carrying `@advice("stop")`. ✅ 2026-09-05
+      The baseline is unconditional on purpose — a fail-closed one would change the
+      verdicts S1.7 has to match, so it moves to S2.7 with the parity suite.
+      `tools/validate_policies.py` grew an **annotation lint**: Cedar treats
+      annotations as opaque strings, so a typo'd `@advice("stopp")` validates
+      cleanly and then crashes the resolver.
+      *Accept:* ✅ `make validate` green; `tests/test_core_policies.py` (13 tests)
+      reaches both verdicts through the real file and carries `stop` back out.
 - [ ] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
       one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`.
       *Accept:* `smoke_test.py` passes **both** scenarios with `AGENTGUARD=cedar` set,
@@ -371,3 +378,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.4 | 0.0579 ms mean / 0.0772 ms p99 per decision with a pre-parsed `PolicySet`. Passing policy text instead costs 2× — worth knowing before writing the engine, since it is the same mistake AgentSpec makes. Against S0.11: a whole Cedar decision is cheaper than AgentSpec's *parsing phase alone*, and 3.3× cheaper than its whole guard path, while evaluating three policies with schema validation and an order-independent result. RQ5's honest headline is still "the engine is free, detection is the cost" — this is a ratio, not a latency problem. |
 | 2026-09-05 | S1.5 | First real schema landed, namespaced `AgentGuard` per thesis §C.2 — the spikes were namespace-free, and paying that cost now beats rewriting the corpus at S3.4. Kept strictly smaller than §C.2 with each omission annotated by the step that adds it, so the file records what is *deferred* rather than pretending to be finished. Added `tools/validate_policies.py` as the executable form of the S2.5 requirement ("refuse to start on failure") — it exits non-zero, so it doubles as a CI gate. One find while writing the tests: the schema also rejects an **unnamespaced** `Action::"invoke"`, so the namespace cannot be half-adopted by accident. Left the `flags: Set<String>` hole open deliberately and pinned it with a test that must break at S2.2. |
 | 2026-09-05 | env | The Windows checkout could not run the suite at all: `.venv` was the upstream environment (LangChain 1.4, Python 3.14) and LangChain 0.3.x cannot import under 3.14 — `Chain.dict()` shadows `dict` when PEP 649 evaluates `Optional[dict[str, Any]]`, so `langchain.chains.base` fails at class creation. Rebuilt `.venv` on 3.12.14 from `requirements-dev.txt`. One genuine portability bug surfaced: `test_rule_writes_are_confined_to_the_library` compared a native path against a `/`-separated literal. Fixed; suite green on Windows. |
+| 2026-09-05 | S1.6 | Two policies, and a finding that came out of writing the `@source` annotation honestly. The walking skeleton's rule (stop on `destuctive_os_inst`) is **not** in the shipped corpus: the nearest match, `pythonrepl.ar#index8`, also requires `involve_system_file` and only asks the user. That is the norm — **24 of the 26 rules in `pythonrepl.ar` enforce `user_inspection`**, and of the two that `stop`, one is `is_malware`, whose predicate is never registered (S0.12). The shipped PythonREPL corpus has exactly **one working hard stop**. Second: Cedar validates policy logic but treats annotations as opaque strings, so `@advice("stopp")` type-checks and then crashes the resolver at decision time — the same silent-failure shape as AgentSpec's. Added an annotation lint to `tools/validate_policies.py`; the lattice moves to `agentguard/advice.py` at S2.4. |
