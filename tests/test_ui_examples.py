@@ -81,4 +81,8 @@ def test_rule_writes_are_confined_to_the_library():
         app._safe("../../../etc/passwd")
     with pytest.raises(ValueError):
         app._safe("src/rule.py")
-    assert app._safe("ui/rules/scratch.ar").endswith("ui/rules/scratch.ar")
+    # _safe returns a native path, so the expected suffix has to be built with
+    # os.path.join -- a literal "ui/rules/scratch.ar" only matches on POSIX.
+    assert app._safe("ui/rules/scratch.ar").endswith(
+        os.path.join("ui", "rules", "scratch.ar")
+    )
