@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 0, Step S0.5.
+**Current position:** Sprint 0, Step S0.9 (dev requirements + CI).
 
 ---
 
@@ -32,15 +32,14 @@ Goal: a clean, tested, reproducible base to build on.
 - [x] **S0.4** Fix the `Rule.triggered` crash on `AgentFinish` (None/dict tool inputs). ✅ 2026-09-04
       *Accept:* Scenario B of `smoke_test.py` completes instead of raising `AttributeError`.
 - [x] **S0.5** Write `smoke_test.py` — offline enforcement test, no API key. ✅ 2026-09-04
-      *Accept:* `.venv/bin/python smoke_test.py` ends with `SMOKE TEST: PASS`.
+      *(Superseded by S0.8: converted into `tests/` and the file removed.)*
 - [x] **S0.6** Write `tools/audit_rules.py` — parse audit of the shipped rule corpus. ✅ 2026-09-04
       *Accept:* `.venv/bin/python tools/audit_rules.py src` emits the three Markdown tables.
 - [x] **S0.7** Write `RUNNING.md` — setup, testing, known breakages. ✅ 2026-09-04
-- [ ] **S0.8** Convert `smoke_test.py` into a real pytest suite at `tests/`.
-      Split into `tests/test_enforcement.py` (scenarios A/B + one per enforcement mode:
-      `stop`, `skip`, `none`) and `tests/test_rule_parsing.py` (the B.2 feature probes as
-      xfail-marked tests documenting current grammar limits).
-      *Accept:* `.venv/bin/pytest -q` is green; ≥8 tests collected.
+- [x] **S0.8** Convert `smoke_test.py` into a real pytest suite at `tests/`. ✅ 2026-09-04
+      `tests/conftest.py` (recording tool stub + scripted-LLM agent factory),
+      `tests/test_enforcement.py` (11 tests), `tests/test_rule_parsing.py` (14 tests).
+      *Accept:* ✅ `.venv/bin/pytest -q` → **17 passed, 8 xfailed**; 25 tests collected.
 - [ ] **S0.9** Add `requirements-dev.txt` (pytest, the pinned runtime deps) and a
       GitHub Actions workflow `.github/workflows/ci.yml` running `pytest` on push.
       *Accept:* workflow file committed; `act` or a pushed run is green.
@@ -297,3 +296,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | Date | Step | Note |
 |---|---|---|
 | 2026-09-04 | S0.1–S0.7 | Forked repo set up; found and fixed the `Rule.triggered` crash on `AgentFinish` (any normal completion crashed with a tool-triggered rule loaded); smoke test green; corpus audit shows 21/42 shipped rules fail to parse under the repo's own grammar; the repo's own two tests both fail. |
+| 2026-09-04 | S0.8 | Replaced `smoke_test.py` with a hermetic pytest suite: 25 tests, 17 pass + 8 strict-xfail. Tool execution is now a recording stub, so tests assert the tool was *reached* without running generated code. The 8 xfails are `strict=True`, so fixing the grammar in S3.1 will break them on XPASS and force an update in the same commit. Added a rule-order test documenting that AgentSpec's first-match-wins loop is order-dependent — the property Cedar removes (feeds S2.8). |

@@ -110,22 +110,32 @@ Read that method first. Nothing else in the repo matters as much.
 ## 4. The fast path: verify enforcement works (no API key)
 
 ```bash
-.venv/bin/python smoke_test.py
+.venv/bin/pytest -q
 ```
 
-`smoke_test.py` scripts a `FakeListLLM` so the agent deterministically proposes a
-known action, then checks the rule engine's response:
+Expected: `17 passed, 8 xfailed`.
+
+The suite is hermetic and offline. A scripted `FakeListLLM` makes the agent
+propose a known action, and a recording stub stands in for `PythonREPL` so a
+test can assert whether the tool was *reached* without executing generated code.
+
+**`tests/test_enforcement.py`** — the loop you'll be replacing with Cedar:
 
 - **Scenario A** — agent proposes `os.remove("notes.txt")`; the rule must **stop**
   it, and the tool must never run.
 - **Scenario B** — agent proposes `print(6 * 7)`; no rule fires, the tool runs,
   output is `42`. (This is your false-positive check — a guard that blocks
   everything would "pass" Scenario A alone.)
+- One test per enforcement mode (`stop`, `skip`, `none`), each using `check true`
+  so it isolates the enforcement outcome from predicate logic.
+- `TestTriggerMatching` — regression tests for the `Rule.triggered` fix in §6.1.
 
-Expected output ends with `SMOKE TEST: PASS`.
+**`tests/test_rule_parsing.py`** — 13 probes recording exactly what the grammar
+accepts and rejects today. The 8 rejections are `xfail(strict=True)` on purpose:
+when S3.1 fixes the grammar they become XPASS *failures*, forcing the file to be
+updated in the same commit rather than drifting out of date.
 
-This is the loop you'll be replacing with Cedar, so make sure you can run it,
-break it deliberately, and watch it fail.
+Make sure you can run this, break a rule deliberately, and watch it fail.
 
 ### Writing your own rule
 
@@ -264,9 +274,9 @@ Budget real money for API calls: 27 indices × 30 programs × several agent step
 ## 8. Suggested first commits on this fork
 
 1. `.gitignore` for `.venv/`, `__pycache__/`, `*.pyc`, `.DS_Store` *(done)*
-2. `RUNNING.md` + `smoke_test.py` + `tools/audit_rules.py` *(done)*
-3. The `Rule.triggered` fix *(applied, uncommitted)*
-4. A `pytest` suite + CI, starting from `smoke_test.py`
+2. `RUNNING.md` + `tools/audit_rules.py` *(done)*
+3. The `Rule.triggered` fix *(done)*
+4. A `pytest` suite *(done — `tests/`)*; CI is next (plan.md S0.9)
 
 Being able to say "the original had no passing tests; ours has a green suite and
 a verification gate" is a real engineering contribution for the thesis.
