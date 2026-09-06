@@ -11,13 +11,14 @@ fed back to the agent) is reused unchanged, so a verdict difference between the
 two engines is a difference in *deciding*, not in plumbing. That is what makes
 the S1.7 parity test meaningful.
 
-Two things are deliberately not general yet:
+Sensors, request building and the entity store live in agentguard/request.py
+(S2.3); the registry they are selected from is agentguard/sensors.py (S2.1).
+What is left here is loading the policy set, asking Cedar, and mapping the
+answer onto AgentSpec's enforcement classes.
 
-  * one *active* sensor. All 36 are registered (agentguard/sensors.py, S2.1);
-    this engine still evaluates one, because core.cedar still reads one flag.
-    S2.3 makes the selection domain-aware.
-  * one hard-coded principal. The Session entity that carries taints across
-    steps -- the actual thesis contribution -- is S4.2.
+One thing is deliberately not general yet: a single hard-coded principal. The
+Session entity that carries taints across steps -- the actual thesis
+contribution -- is S4.2.
 
 Run the suite through it with:
 
@@ -37,8 +38,8 @@ import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
 from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
+from agentguard import request as ag_request
 from agentguard import schema as ag_schema
-from agentguard import sensors as sensor_registry
 from state import RuleState
 
 NAMESPACE = "AgentGuard"
@@ -57,63 +58,13 @@ class PolicyError(RuntimeError):
 
 
 # ---------------------------------------------------------------- sensors
-# The registry itself is agentguard/sensors.py (S2.1). What lives here is the
-# *selection*: which of the 36 this engine actually runs.
+# Selection and evaluation moved to agentguard/request.py (S2.3). The engine no
+# longer names sensors at all: it asks for a domain, and the registry's metadata
+# decides what can safely run there.
 
-#: The sensors this engine materialises. Still one, because core.cedar still
-#: reads one flag -- widening it would pay for 35 evaluations no policy asks
-#: about. S2.3 replaces the hard-coded tuple with a domain-aware selection,
-#: which is the point of Sensor.domain: six of the 36 raise rather than return
-#: False when run on a code agent's trace, because they are embodied sensors
-#: expecting embodied observations.
-ACTIVE_SENSORS = ("destuctive_os_inst",)
-
-
-def sensors():
-    """The Sensor objects this engine materialises, by name.
-
-    Resolved through the registry rather than indexing predicate_table
-    directly, so a typo is a KeyError at construction naming what is available
-    -- not, as in AgentSpec, a KeyError mid-run (S0.12's `is_malware`).
-    """
-    return {name: sensor_registry.get(name) for name in ACTIVE_SENSORS}
-
-
-def run_sensors(state: RuleState) -> Dict[str, bool]:
-    """Evaluate every active sensor; return {flag: value} for the ones that ran.
-
-    This is the impure half of the architecture and the only place arbitrary
-    Python runs. Cedar expressions are pure and total, so a regex like
-    `destuctive_os_inst` can never live inside a policy -- it runs here and
-    arrives in `context.flags`.
-
-    The return is a map and not a list of names that fired, because under the
-    record schema (S2.2) those are different facts: a flag present and `false`
-    means the sensor ran and said no; a flag *absent* means nobody looked. Cedar
-    forces a policy to distinguish them, so the request has to carry the
-    distinction.
-
-    Exceptions are *not* caught; see sensors.evaluate for why.
-    """
-    tool_input = state.action.input if state.action else None
-    if tool_input is None:
-        # AgentFinish carries no tool input. The predicates all index into a
-        # string, so there is nothing to sense (and `action finish` is not in
-        # the schema until S2.7).
-        return {}
-    text = tool_input if isinstance(tool_input, str) else str(tool_input)
-    evaluated = {}
-    for sensor in sensors().values():
-        value = sensor_registry.evaluate(sensor, state.user_input, text,
-                                         state.intermediate_steps)
-        for flag in sensor.flags:
-            evaluated[flag] = value
-    return evaluated
-
-
-def fired(evaluated: Dict[str, bool]) -> List[str]:
-    """Just the flags that came back true, sorted. For display and the set variant."""
-    return sorted(flag for flag, value in evaluated.items() if value)
+#: Which agent binding this executor guards. Only `code` is wired up; an
+#: embodied or shell binding sets its own. Nothing infers it from the action.
+DOMAIN = ag_request.DEFAULT_DOMAIN
 
 
 # ---------------------------------------------------------------- advice
@@ -229,68 +180,6 @@ def load_bundle(policy_dir: Optional[str] = None) -> PolicyBundle:
                         annotations=annotations)
 
 
-# ---------------------------------------------------------------- request
-# S2.3 moves this to agentguard/request.py, where the entity store also grows
-# a Session (S4.2) and the context grows targets/risk/step (S4.2).
-
-
-def _literal(value: str) -> str:
-    """Escape a string for use inside a Cedar entity uid.
-
-    The tool name reaches us from the model's own output, so it is
-    attacker-influenced whenever the task prompt is. Interpolating it raw into
-    `Tool::"..."` would let a crafted name close the quote and change which
-    policies apply. Cedar would most likely reject the result -- a parse failure
-    is NoDecision, which we fail closed on -- but relying on a parser to catch
-    an injection is not a control.
-    """
-    return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def build_context_flags(evaluated: Dict[str, bool], variant: str):
-    """Shape the sensor results the way the schema on disk declares them.
-
-    The variant comes from the generated schema rather than a setting of our
-    own, so the request and the type it is checked against cannot disagree.
-
-      record   {flag: bool} for every sensor that ran. Absent means not run,
-               and Cedar makes a policy say which of the two it means.
-      set      [flag, ...] for the ones that fired. Cannot express "ran and
-               said no" at all -- which is the point of the comparison.
-    """
-    if variant == ag_schema.RECORD:
-        return dict(evaluated)
-    if variant == ag_schema.SET:
-        return fired(evaluated)
-    raise PolicyError(f"schema declares an unknown flags variant {variant!r}")
-
-
-def build_request(tool_name: str, evaluated: Dict[str, bool],
-                  variant: str = ag_schema.DEFAULT_VARIANT) -> Dict[str, Any]:
-    return {
-        "principal": f'{NAMESPACE}::Agent::"{AGENT_ID}"',
-        "action": f'{NAMESPACE}::Action::"invoke"',
-        "resource": f'{NAMESPACE}::Tool::"{_literal(tool_name)}"',
-        "context": {"flags": build_context_flags(evaluated, variant)},
-    }
-
-
-def build_entities(tool_name: str) -> List[Dict[str, Any]]:
-    """The entity store for one decision.
-
-    `kind` and `reversible` are placeholders: no policy in core.cedar reads
-    them, and inventing a plausible value per tool would be fabricating the tool
-    registry that S2.1 builds properly. `reversible: false` is the conservative
-    default -- assume an effect cannot be undone until something says otherwise.
-    """
-    return [
-        {"uid": {"type": f"{NAMESPACE}::Agent", "id": AGENT_ID},
-         "attrs": {"framework": FRAMEWORK}, "parents": []},
-        {"uid": {"type": f"{NAMESPACE}::Tool", "id": tool_name},
-         "attrs": {"kind": "unknown", "reversible": False}, "parents": []},
-    ]
-
-
 # --------------------------------------------------------------- decision
 
 
@@ -309,6 +198,9 @@ class CedarVerdict:
     decision: str
     policy_ids: Tuple[str, ...] = ()
     errors: Tuple[str, ...] = ()
+    #: What materialisation produced, kept so the bench and the tests can see
+    #: the evidence a decision was made on rather than re-deriving it.
+    materialisation: Optional[ag_request.Materialisation] = None
 
 
 def _describe(bundle: PolicyBundle, policy_ids, advice: str, errors) -> str:
@@ -322,18 +214,29 @@ def _describe(bundle: PolicyBundle, policy_ids, advice: str, errors) -> str:
     return f"cedar policy set (advice: {advice})\n" + "\n".join(lines)
 
 
-def decide(bundle: PolicyBundle, state: RuleState) -> CedarVerdict:
-    """Run the sensors, ask Cedar, resolve one enforcement outcome."""
+def decide(bundle: PolicyBundle, state: RuleState,
+           domain: str = None) -> CedarVerdict:
+    """Materialise, ask Cedar, resolve one enforcement outcome."""
     with profiling.phase("predicate_eval"):
-        evaluated = run_sensors(state)
+        material = ag_request.materialise(state, bundle.flags_variant,
+                                          domain or DOMAIN)
 
-    tool_name = state.action.name
+    # A sensor that raised means we do not know what the action is doing.
+    # Deciding anyway would be deciding on evidence we failed to gather, and
+    # the missing flag reads to Cedar as "not evaluated" -- so any policy keyed
+    # on it silently cannot fire. Stop instead, before asking.
+    if material.errors:
+        messages = tuple(str(failure) for failure in material.errors)
+        return CedarVerdict(id="__sensor_error__", advice=DEFAULT_ADVICE,
+                            decision="NotEvaluated", errors=messages,
+                            materialisation=material,
+                            raw=_describe(bundle, (), DEFAULT_ADVICE, messages))
+
     # S2.9 adds a `cedar_decide` phase to src/profiling.py. Until then the
     # decision itself is unmeasured, so guard_ms under-reports for this engine
     # -- don't quote a Cedar guard total from a profile run before S2.9.
-    result = is_authorized(
-        build_request(tool_name, evaluated, bundle.flags_variant),
-        bundle.policy_set, build_entities(tool_name), bundle.schema)
+    result = is_authorized(material.request, bundle.policy_set,
+                           material.entities, bundle.schema)
 
     errors = tuple(str(e) for e in result.diagnostics.errors)
     policy_ids = tuple(result.diagnostics.reasons)
@@ -346,18 +249,20 @@ def decide(bundle: PolicyBundle, state: RuleState) -> CedarVerdict:
         advice = DEFAULT_ADVICE
         return CedarVerdict(id="__engine_error__", advice=advice,
                             decision=str(result.decision), policy_ids=policy_ids,
-                            errors=errors,
+                            errors=errors, materialisation=material,
                             raw=_describe(bundle, policy_ids, advice, errors))
 
     if result.decision == Decision.Allow:
         return CedarVerdict(id="__allow__", raw="", advice="allow",
-                            decision="Allow", policy_ids=policy_ids)
+                            decision="Allow", policy_ids=policy_ids,
+                            materialisation=material)
 
     advice = join([bundle.advice_for(pid) for pid in policy_ids] or [DEFAULT_ADVICE])
     determining = [pid for pid in policy_ids if bundle.advice_for(pid) == advice]
     return CedarVerdict(
         id=", ".join(bundle.name_for(pid) for pid in determining) or "__deny__",
         advice=advice, decision="Deny", policy_ids=policy_ids,
+        materialisation=material,
         raw=_describe(bundle, policy_ids, advice, ()),
     )
 

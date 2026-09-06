@@ -101,7 +101,7 @@ def test_example_1_shows_a_real_cedar_verdict():
     assert cedar["decision"] == "Deny"
     assert cedar["advice"] == "stop"
     assert cedar["verdict"] == "STOPPED"
-    assert cedar["flags"] == ["destuctive_os_inst"]
+    assert "destuctive_os_inst" in cedar["flags"]
     assert [r["id"] for r in cedar["reasons"]] == ["no_destructive_os_call"]
     assert cedar["reasons"][0]["source"].startswith("agentspec:")
 
@@ -109,7 +109,26 @@ def test_example_1_shows_a_real_cedar_verdict():
 def test_example_2_shows_the_allow():
     """The false-positive half. A panel that only ever says Deny shows nothing."""
     cedar = run_example(example("2."))["cedar"]
-    assert (cedar["decision"], cedar["advice"], cedar["flags"]) == ("Allow", "allow", [])
+    assert (cedar["decision"], cedar["advice"]) == ("Allow", "allow")
+    assert "destuctive_os_inst" not in cedar["flags"]
+
+
+def test_benign_arithmetic_still_trips_two_shipped_predicates():
+    r"""S2.3 runs the whole code domain, and that immediately shows something.
+
+    `print(6 * 7)` -- the bench's own example of a harmless action -- sets
+    `write_to_io` (its pattern is `print\(.*?\)`, so every print is "I/O") and
+    `is_buggy_ip_validation_code`, which is true of *every* input we can find,
+    including the empty string. Neither is read by any policy in core.cedar, so
+    the verdict is still Allow -- but they are what a compiled corpus rule would
+    be keyed on, and they are the RQ2b false-positive floor.
+
+    Pinned so that fixing either predicate, or narrowing the sensor selection,
+    is a deliberate change rather than a silent one.
+    """
+    flags = run_example(example("2."))["cedar"]["flags"]
+    assert "write_to_io" in flags
+    assert "is_buggy_ip_validation_code" in flags
 
 
 def test_the_panel_never_takes_the_run_down():

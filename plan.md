@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 2, Step S2.3 (request materialisation).
+**Current position:** Sprint 2, Step S2.4 (the advice lattice).
 
 ---
 
@@ -190,9 +190,18 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       *Accept:* ✅ `tests/test_schema_codegen.py` (17 tests) adds a flag and regenerates
       with no template change; S1.5's "misspelled flag is missed" test has flipped to
       `test_a_misspelled_flag_is_now_caught`.
-- [ ] **S2.3** `agentguard/request.py` — materialisation: `RuleState → (Request, Entities)`.
-      Runs sensors, builds principal/action/resource/context.
-      *Accept:* golden-file test: a fixed `RuleState` produces a fixed JSON request.
+- [x] **S2.3** `agentguard/request.py` — materialisation: `RuleState → (Request, Entities)`.
+      Runs sensors, builds principal/action/resource/context. ✅ 2026-09-06
+      Sensors are now selected **by domain**, not by name — the hard-coded single
+      sensor is gone and the whole 25-sensor code domain runs. A sensor that raises
+      is recorded and its flag left *absent* (= "not evaluated"), and the engine
+      stops rather than deciding on evidence it failed to gather.
+      `make golden` regenerates the golden request; review its diff, it is what
+      every policy sees.
+      *Accept:* ✅ `tests/test_request.py` (13 tests) against
+      `tests/golden/request_python_repl.json`.
+      ⚠️ Running the whole domain immediately exposed **three corpus defects** —
+      see [`docs/findings.md`](docs/findings.md) D-1…D-4.
 - [ ] **S2.4** `agentguard/advice.py` — the advice lattice
       (`stop > user_inspection > llm_self_reflect > skip > allow`), plus the rule that
       `substitute` only applies when it is the unique determining policy.
@@ -369,8 +378,9 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 
 - [ ] **W.1** Draft thesis Chapters 1, 2 (background) and 8 (related work) **during
       Sprints 0–2**, while the code is slow. Do not leave writing to Sprint 7.
-- [ ] **W.2** Keep `docs/findings.md` as a running lab notebook — every surprise,
+- [x] **W.2** Keep `docs/findings.md` as a running lab notebook — every surprise,
       every bug, every counterexample, dated. Findings evaporate if not written down.
+      Started 2026-09-06 at S2.3 with D-1…D-4. **Keep adding to it.**
 - [ ] **W.3** After each sprint: update this file, commit, and push `dev-foued`.
 - [ ] **W.4** After **every step**: run `make test`, then exercise the change in the
       bench (`make ui`). If a step adds behaviour the bench cannot show, extend the
@@ -416,3 +426,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.8 | Panel wired, and it immediately earned its keep: **example 3 disagrees**. "No rules loaded" is AgentSpec's control case — an empty rule list means nothing can fire — but AgentGuard's policy set is *ambient*, loaded from `policies/` rather than passed in, so the same call is denied. Neither engine is wrong; the two have different notions of where policy lives, and S2.7 has to pick one deliberately. **Example 7** is the other one worth looking at: a rule that does not parse takes the AgentSpec run down mid-flight (verdict ERROR) while Cedar still returns a decision — RQ6 visible in the UI rather than argued in prose. Panel is a decision, not a second agent run; the engine toggle and the verdict diff stay with S2.10. |
 | 2026-09-06 | S2.1 | Registry landed, and the metadata is derived rather than declared — `reads` from the AST, `domain` from the defining module, `cost` from `reads` — so S2.2 can generate the schema without a hand-maintained table in the middle of it. Three findings. (1) **The plan's third domain is empty.** `rules/manual/toolemu.py` is a 0-byte file and `terminal.py` keeps its four predicates in a private `table` dict `table.py` never merges, so the registry is 25 code + 11 embodied and *zero* toolemu. `src/rules/__pycache__/` still holds **38 orphaned `.pyc` files** with no `.py` source — `tool_emu_predicate_table` and 30+ per-toolkit predicate modules — so that layer was deleted upstream and survives only as bytecode. S3.4 and S6.3 both assume it exists. (2) **Domain is not decoration:** run an embodied sensor on a code agent's trace and it *raises* rather than returning False — 5 of 11 do — and the exception class is not even stable (`is_unsafe_fillliquid` gives AttributeError on an input with spaces, IndexError without). So "catch the known exception" is not available to S2.3; only not running the sensor is. Every raising sensor is one whose `reads` include `intermediate_steps`, so the metadata is sufficient to avoid them — that is a test. (3) **35 of 36 predicates never look at the user's task.** Only `predicate11` reads `user_input`, and its name is a placeholder. A guard that cannot relate the action to the request cannot distinguish the deletion that was asked for from the one that was not — relevant to RQ2b, since it bounds how few false positives the baseline can possibly achieve. |
 | 2026-09-06 | S2.2 | Schema is generated from the registry, and `make validate` fails when the file on disk no longer matches it — a hand-edited schema type-checks perfectly and silently drops a flag, which is a policy that can never fire, so the staleness check is the point rather than tidiness. **The plan's record-of-Bools has a sub-variant it did not name, and only one of the two is honest.** With *required* attributes Cedar answers `NoDecision` unless the request carries every declared flag — so shipping them would mean sending `false` for the 35 sensors that never ran, asserting "the dangerous thing is not happening" about checks nobody performed. That is the exact fail-open shape this project exists to remove. With *optional* attributes the request carries only what was evaluated, and Cedar **refuses to validate an unguarded access** (`unable to guarantee safety of access`) — so a policy is forced to write `context.flags has X && context.flags.X` and the three states stay distinct: fired / ran-and-said-no / never-ran. The verbosity is the honesty, and it is mechanical, so S3.3's compiler emits it. `run_sensors` now returns a map rather than a list of names for the same reason. S1.5's deliberately-failing test has flipped: a misspelled flag is now rejected by name at load. Bench shows `destuctive_os_inst = false` as a distinct muted pill, so "ran and said no" is visible rather than inferred. |
+| 2026-09-06 | S2.3 | Materialisation extracted, and selecting sensors **by domain** rather than by name turned out to be the whole step. Running all 25 code sensors instead of one immediately produced **three corpus defects**, now written up in `docs/findings.md`. **D-1: `is_buggy_ip_validation_code` is a constant `True` in practice** — it asks whether the *code text* starts with a literal `^` and ends with `$`, which almost nothing does, so it short-circuits to True on every input we could construct including the empty string and a *correct* IP-validation regex. Any rule using it fires always; at `user_inspection` (24 of 26 rules) that prompts the user on every call, which is how a guardrail gets switched off. **D-2: `write_to_io` matches `print\(.*?\)`**, so `print(6 * 7)` — the bench's own benign example — is "writing to I/O". Two of 25 sensors fire on trivial arithmetic; one fires on the empty string. **D-3: the `.ar` corpus and the executable `checks{}` table disagree at 8 of 16 indices**, and six names on the `.ar` side are not registered at all, so those rules cannot execute — the same class as S0.12's `is_malware` but systematic, and a hard bound on what S3.4 can compile faithfully. **D-4 corrects an S2.1 claim of mine**: I said 35 of 36 predicates ignore the user's task; it is 36 of 36 — `predicate11` only *forwards* `user_input` to helpers that ignore it, so "references the name" overstated it. Also measured: sensor cost is dominated by input size, not sensor count (25 sensors on 2 KB = 2.98 ms vs a 0.058 ms Cedar decision, so detection is ~51× the decision) — the concrete form of RQ5's headline. |

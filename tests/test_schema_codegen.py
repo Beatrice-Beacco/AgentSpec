@@ -191,11 +191,11 @@ def test_required_attributes_would_have_forced_us_to_lie():
 # ------------------------------------------------------- engine wiring
 
 def test_the_engine_builds_the_shape_the_schema_declares():
-    from agentguard import executor                   # noqa: PLC0415
+    from agentguard import request                    # noqa: PLC0415
 
     evaluated = {"destuctive_os_inst": False}
-    record = executor.build_request("python_repl", evaluated, ag_schema.RECORD)
-    as_set = executor.build_request("python_repl", evaluated, ag_schema.SET)
+    record = request.build_request("python_repl", evaluated, ag_schema.RECORD)
+    as_set = request.build_request("python_repl", evaluated, ag_schema.SET)
 
     assert record["context"]["flags"] == {"destuctive_os_inst": False}
     # the set variant cannot express "ran and said no" at all -- it disappears
