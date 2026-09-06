@@ -211,6 +211,7 @@ def initialize_controlled_agent(
     agent_kwargs: Optional[dict] = None,
     *,
     tags: Optional[Sequence[str]] = None,
+    executor_cls=None,
     **kwargs: Any,
 ) -> ControlledAgentExecutor:
     """Load an agent executor given tools and LLM.
@@ -224,6 +225,8 @@ def initialize_controlled_agent(
             not provided. Defaults to None.
         agent_path: Path to serialized agent to use. If None and agent is also None,
             will default to AgentType.ZERO_SHOT_REACT_DESCRIPTION. Defaults to None.
+        executor_cls: Guard engine to build. Defaults to whatever $AGENTGUARD
+            selects.
         agent_kwargs: Additional keyword arguments to pass to the underlying agent.
             Defaults to None.
         tags: Tags to apply to the traced runs. Defaults to None.
@@ -271,7 +274,12 @@ def initialize_controlled_agent(
             "Somehow both `agent` and `agent_path` are None, "
             "this should never happen."
         )
-    return _executor_class().from_agent_and_tools(
+    # executor_cls lets a caller pick the engine directly. $AGENTGUARD is the
+    # default, but reading a global at construction makes it impossible to build
+    # one of each in the same process -- which the bench's compare mode does, and
+    # mutating os.environ around each build would be racy under a threaded
+    # server (plan.md S2.10).
+    return (executor_cls or _executor_class()).from_agent_and_tools(
         agent=agent_obj,
         tools=tools,
         rules=rules,

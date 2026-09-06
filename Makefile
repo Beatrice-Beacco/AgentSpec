@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 439 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 445 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
