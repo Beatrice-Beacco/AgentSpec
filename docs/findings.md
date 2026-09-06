@@ -112,6 +112,47 @@ independently of its policy language. RQ2b.
 
 Reproduce: `tests/test_sensors.py::test_no_predicate_actually_uses_the_user_task`.
 
+## D-5 · `invoke_action` (substitution) is unreachable in the baseline
+
+*Found 2026-09-06 during S2.4.*
+
+AgentSpec's grammar has a substitution enforcement — replace the proposed call
+with a different one:
+
+```
+enforcement: ENFORCEMENT | actionInvoke | config;
+actionInvoke: INVOKE LPAREN IDENTIFIER COMMA LBRACE kvPair (COMMA kvPair)* RBRACE RPAREN;
+```
+
+Four things are wrong with it at once:
+
+1. `Rule.from_text` parses `enforce invoke_action(safe_tool, {"cmd": "echo hi"})`
+   without complaint.
+2. At enforcement time `RuleInterpreter.enterEnforcement` sets
+   `self.enforce = ctx.getText()`, so the lookup becomes
+   `ENFORCEMENT_TO_CLASS['invoke_action(safe_tool,{"cmd":"echo hi"})']` and
+   raises **KeyError mid-run**, after the LLM has already planned.
+3. `InvokeAction` *is* defined in `enforcement.py` but is **not registered** in
+   `ENFORCEMENT_TO_CLASS`, so it can never be selected.
+4. Even if it were, it is a **no-op**: `apply` returns
+   `(EnforceResult.CONTINUE, action)` — the *original* action, unchanged. It
+   substitutes nothing.
+
+No rule in the shipped corpus uses it, which is presumably why none of this was
+noticed. `config`, the third enforcement alternative, has the same shape of
+problem.
+
+**Why it matters.** The thesis plan models substitution as one of the five
+enforcement outcomes (§C.4, §C.6). It is not an outcome the baseline has — so
+anything we build here is a **capability addition, not an improvement on a
+measured baseline**, and the write-up has to say so. It also adds a fifth entry
+to S0.12's catalogue of ways an AgentSpec rule loads cleanly and then fails:
+*parsed, unmapped, and a stub even if it were mapped*.
+
+Reproduce: the probe is in the S2.4 log entry of `plan.md`;
+`tests/test_advice.py::test_substitute_has_no_enforcement_class_yet` pins our
+side of it.
+
 ---
 
 ## Observations on the design (not corpus defects)

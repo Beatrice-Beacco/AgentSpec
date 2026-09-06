@@ -281,6 +281,9 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
         # safely evaluate (S2.3). Showing both keeps the gap visible.
         "registered": len(sensor_registry.SENSORS),
         "errors": list(verdict.errors),
+        # Set when the outcome was not simply the join -- a downgraded
+        # substitution, an unknown @advice value (S2.4).
+        "resolution_note": verdict.resolution.note if verdict.resolution else "",
         "reasons": [
             {"policy": pid,
              "id": bundle.name_for(pid),
