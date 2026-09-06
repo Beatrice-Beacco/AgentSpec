@@ -32,6 +32,8 @@ Run the suite through it with:
 
     AGENTGUARD=cedar .venv/bin/pytest -q tests/test_cedar_executor.py
 """
+from typing import ClassVar
+
 import agentguard
 import profiling
 from agent import Action
@@ -84,6 +86,8 @@ join = ag_advice.join
 
 class CedarControlledAgentExecutor(ControlledAgentExecutor):
     """ControlledAgentExecutor with the rule loop replaced by a Cedar decision."""
+
+    GUARD_ENGINE: ClassVar[str] = agentguard.CEDAR
 
     @classmethod
     def from_agent_and_tools(cls, agent, tools, rules, callbacks=None, **kwargs):

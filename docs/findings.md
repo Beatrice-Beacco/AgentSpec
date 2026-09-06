@@ -315,6 +315,67 @@ everything. AgentSpec starts happily with an empty rule list — and that is not
 bug in AgentSpec, it is a different notion of where policy lives (see the
 example-3 disagreement at S1.8). S2.7 has to choose one deliberately.
 
+### RQ5 measured on the real engine — and the slogan does not survive it — S2.9
+
+`docs/baseline-latency.md` and `docs/cedar-latency.md`, both regenerated from the
+same suite on the same machine so they can be read against each other.
+
+| phase | AgentSpec | AgentGuard |
+|---|---:|---:|
+| `rule_parse` | 0.3507 ms — **79.2%** of guard | **0.0000 ms — 0.0%** |
+| `predicate_eval` (detection) | 0.0722 ms — 16.3% | 0.5104 ms — 49.3% |
+| `cedar_decide` | — | 0.5067 ms — 48.9% |
+| `enforcement` | 0.0198 ms — 4.5% | 0.0191 ms — 1.8% |
+| **guard total** | **0.4428 ms** | **1.0362 ms** |
+
+**The architectural claim holds.** `rule_parse` is exactly zero for AgentGuard
+against 79.2% of AgentSpec's guard time. A `PolicySet` is parsed once at load
+because that is the natural way to use the API, not because anyone optimised.
+
+**Two things the plan expected are not what we measured, and both should go in
+the write-up as stated.**
+
+*1. "The policy engine is free; detection is the cost" is not supported at these
+input sizes.* Detection and decision come out within 1% of each other (0.5104 vs
+0.5067 ms). The slogan was extrapolated from the S1.4 spike, where a decision
+cost 0.058 ms — but that spike used a 1-flag request with no schema and no
+entity store. Decomposing the difference on the real request (2000 calls each):
+
+| configuration | ms |
+|---|---:|
+| 25 flags + schema + entities — what the engine does | 0.2341 |
+| 25 flags + entities, no schema | 0.1472 |
+| 25 flags, no entities, no schema | 0.1185 |
+| 1 flag + schema + entities | 0.1151 |
+| 1 flag, no entities, no schema — the S1.4 shape | 0.0762 |
+
+Passing the `Schema` on every call costs **+0.087 ms**, more than a third of the
+total; the entity store **+0.029 ms**; the 24 extra flags **+0.039 ms**. So the
+decision cost is dominated by **marshalling the request across the Python/Rust
+boundary, not by evaluating policies** — which is a more useful thing to say than
+the slogan, and it names an optimisation (hoist the parsed schema) that nobody
+has to guess at.
+
+*2. AgentGuard's guard total is currently **2.3× AgentSpec's**.* Reported
+plainly because it is true, and because the reason is a choice we made rather
+than a cost Cedar imposes: **AgentGuard evaluates 25 sensors per step, AgentSpec
+evaluates the 1–2 named by whichever rules triggered.** That is S2.3's decision
+to materialise the whole domain, and S2.3 measured the lever — 25 sensors to 1
+takes detection from 0.0893 ms to 0.0023 ms on a short input. Narrowing
+materialisation to the flags the loaded policy set actually reads would put the
+two engines' detection cost within noise of each other and leave the
+`rule_parse` difference as the whole story.
+
+Until that is done, the honest sentence is: *the new engine removes the
+baseline's single largest cost and replaces it with a decision of comparable
+size, while doing strictly more work per step by choice.*
+
+Every number here is against a scripted `FakeListLLM`. A real model's planning
+step is hundreds of milliseconds, so both guards are noise in production; the
+comparison is between the phases, never against the total.
+
+Reproduce: `make profile-freeze` and `make profile-cedar-freeze`.
+
 ### Order independence, measured — S2.8
 
 Thesis claim M2, as a counterexample rather than an argument. The same three
