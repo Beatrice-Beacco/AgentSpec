@@ -147,11 +147,32 @@ worth trying: <b>example 3</b> (no rules loaded) still gets a Cedar Deny, becaus
 policy set is ambient rather than passed in; and <b>example 7</b> (a rule that does not
 parse) takes the legacy run down with an ERROR while Cedar still decides.</p>
 
+<h2>The engine toggle and compare mode</h2>
+<p>The dropdown next to <b>Run</b> picks which guard engine decides the run:
+<code>legacy</code>, <code>cedar</code>, or <b>compare both</b>. It chooses the
+executor directly rather than through <code>$AGENTGUARD</code>, so compare mode can
+build one of each in the same process.</p>
+<p><b>Compare both</b> runs one input through both engines and marks every row that
+differs. A differing row is a <em>finding</em>, not a bug in the bench &mdash; it is
+either a gap in the policy set or a real semantic difference. Three of the entries in
+<code>docs/findings.md</code> started as a row in this table. Two worth trying:</p>
+<table>
+  <tr><th>example 1</th><td>both engines STOPPED, but <b>what decided</b> differs:
+    <code>@block_file_deletion</code> (a rule) against
+    <code>@no_destructive_os_call</code> (a policy)</td></tr>
+  <tr><th>example 3</th><td>the engines <b>disagree</b> &mdash; ALLOWED against
+    STOPPED. AgentSpec takes its rules as an argument, so an empty list means no
+    guard; AgentGuard&rsquo;s policy set is ambient, so the call is still denied</td></tr>
+</table>
+<p>The Cedar panel&rsquo;s <code>diagnostics.reasons</code> column is the raw,
+<em>positional</em> id Cedar returns; <code>@id</code> is what a human wrote. They
+differ if the policy file is reordered, which is why the outcome is resolved through
+the advice lattice rather than by taking the first one (see S2.8).</p>
+
 <h2>What changes as the thesis progresses</h2>
-<p>An engine <b>toggle</b> and a compare-both mode land at <code>plan.md</code> S2.10;
-a session/taint viewer at S4.8. Until then the run itself always goes through the
-engine <code>$AGENTGUARD</code> selects (shown in the header), and the Cedar panel is
-shown either way.</p>
+<p>A session/taint viewer lands at <code>plan.md</code> S4.8, so a path-sensitive
+policy can be debugged by watching the taint set accumulate rather than by reading
+JSON.</p>
 
 </main>
 </body>

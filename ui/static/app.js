@@ -28,7 +28,8 @@ async function boot() {
     const label = `${f.scratch ? '✎ ' : ''}${f.path}  (${f.rules} rule${f.rules === 1 ? '' : 's'})`;
     $('library').add(new Option(label, f.path));
   });
-  $('engine').textContent = `engine: ${STATE.engine}`;
+  $('engine').textContent = `default engine: ${STATE.engine}`;
+  $('engineSelect').value = STATE.engine;
 
   parse();
 }
@@ -129,6 +130,34 @@ function renderOutcome(res) {
   $('outcome').innerHTML = html;
 }
 
+// One input, both engines, every difference marked (plan.md S2.10). This is how
+// an RQ1/RQ3 disagreement gets found by hand: a row that differs is either a gap
+// in the policy set or a real semantic difference worth writing down.
+function renderCompare(res) {
+  const rows = res.rows.map(r =>
+    `<tr class="${r.same ? '' : 'differs'}">
+       <th style="white-space:nowrap">${esc(r.aspect)}</th>
+       <td class="mono">${esc(r.legacy)}</td>
+       <td class="mono">${esc(r.cedar)}</td>
+       <td>${r.same ? '<span class="pill mute">same</span>'
+                    : '<span class="pill bad">differs</span>'}</td>
+     </tr>`).join('');
+
+  $('compareBody').innerHTML = `
+    <div class="row" style="gap:14px;align-items:center;margin-bottom:8px">
+      <span class="verdict ${esc(res.runs.legacy.verdict.replace(/\s/g, ''))}">${esc(res.runs.legacy.verdict)}</span>
+      <span class="muted small">legacy</span>
+      <span class="verdict ${esc(res.runs.cedar.verdict.replace(/\s/g, ''))}">${esc(res.runs.cedar.verdict)}</span>
+      <span class="muted small">cedar</span>
+      <span class="pill ${res.agree ? 'ok' : 'bad'}">${res.agree
+        ? 'the engines agree' : 'the engines disagree'}</span>
+    </div>
+    <table><tr><th></th><th>legacy</th><th>cedar</th><th></th></tr>${rows}</table>
+    <p class="hint">A differing row is a finding, not a bug in the bench. Three of
+      the entries in <code>docs/findings.md</code> started here.</p>`;
+  $('compare').hidden = false;
+}
+
 // The same call, decided by Cedar against policies/ (plan.md S1.8). Shown next
 // to the legacy verdict rather than instead of it: a disagreement between the
 // two is the interesting output of this bench, not an error in it.
@@ -158,10 +187,15 @@ function renderCedar(c, legacyVerdict) {
                  quiet.map(f => pill(f + ' = false', 'mute')).join('')) ||
     '<span class="muted small">no sensor ran</span>';
 
+  // `policy` is the synthetic id diagnostics.reasons actually returns -- it is
+  // positional, so it changes if the file is reordered. @id is what a human
+  // wrote. Showing both is what makes the S2.8 order-independence claim legible.
   const reasons = c.reasons.length
-    ? '<table style="margin-top:8px"><tr><th>policy</th><th>@advice</th><th>@source</th></tr>' +
+    ? '<table style="margin-top:8px"><tr><th>diagnostics.reasons</th><th>@id</th>' +
+      '<th>@advice</th><th>@source</th></tr>' +
       c.reasons.map(r =>
-        `<tr><td class="mono">@${esc(r.id)}</td>` +
+        `<tr><td class="mono small">${esc(r.policy)}</td>` +
+        `<td class="mono">@${esc(r.id)}</td>` +
         `<td>${r.advice ? `<span class="pill ${r.advice === 'stop' ? 'bad' : 'warn'}">${esc(r.advice)}</span>` : '<span class="muted">—</span>'}</td>` +
         `<td class="mono small">${esc(r.source || '—')}</td></tr>`).join('') + '</table>'
     : '<p class="small muted" style="margin-top:8px">no determining policies</p>';
@@ -176,7 +210,8 @@ function renderCedar(c, legacyVerdict) {
   $('cedar').innerHTML = panel(`
     <div class="row" style="gap:14px;align-items:center">
       <span class="verdict ${deny ? 'STOPPED' : 'ALLOWED'}">${esc(c.decision)}</span>
-      <span class="small">resolves to <b>${esc(c.verdict)}</b></span>
+      <span class="small">advice <code>${esc(c.advice)}</code> &rarr;
+        resolves to <b>${esc(c.verdict)}</b></span>
       <span class="pill ${agrees ? 'ok' : 'bad'}">${agrees
         ? 'agrees with the legacy verdict'
         : `differs — legacy said ${esc(legacyVerdict)}`}</span>
@@ -202,7 +237,8 @@ const WHY_VERDICT = {
 };
 
 async function run() {
-  $('busy').textContent = 'running…';
+  const which = $('engineSelect').value;
+  $('busy').textContent = which === 'both' ? 'running both…' : 'running…';
   const res = await post('/api/run', {
     rule_text: $('rules').value,
     user_input: $('task').value,
@@ -210,8 +246,29 @@ async function run() {
     tool_input: $('input').value,
     intermediate_steps: steps(),
     approve: $('approve').checked,
+    engine: which,
   });
   $('busy').textContent = '';
+
+  if (res.mode === 'compare') {
+    renderCompare(res);
+    // Below the diff, show the Cedar run in full -- it is the one with the
+    // policy-level detail, and the legacy side is summarised in the table.
+    // Its agree/differ badge must compare against the *legacy* verdict, not
+    // against its own, or it would trivially agree with itself.
+    show(res.runs.cedar, res.runs.legacy.verdict);
+    $('compare').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  $('compare').hidden = true;
+  show(res);
+  $('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function show(res, against) {
+  // `against` is the verdict the Cedar panel measures agreement with. In a
+  // single-engine run that is this run's own verdict; in compare mode it is the
+  // other engine's.
   $('results').hidden = false;
 
   $('verdict').textContent = res.verdict;
@@ -222,9 +279,7 @@ async function run() {
   renderOutcome(res);
   $('trace').textContent = res.trace || '(no trace)';
 
-  renderCedar(res.cedar || {}, res.verdict);
-
-  $('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  renderCedar(res.cedar || {}, against === undefined ? res.verdict : against);
 }
 
 async function probe() {

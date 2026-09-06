@@ -34,7 +34,8 @@ from langchain_core.language_models.fake import FakeListLLM
 
 from spec_lang.AgentSpecLexer import AgentSpecLexer
 from spec_lang.AgentSpecParser import AgentSpecParser
-from controlled_agent_excector import initialize_controlled_agent
+from controlled_agent_excector import (ControlledAgentExecutor,
+                                       initialize_controlled_agent)
 from rule import Rule
 from rules.manual.table import predicate_table
 
@@ -307,9 +308,23 @@ def react_script(tool_name, tool_input, final="done"):
     ]
 
 
+#: Engine name -> the executor class the bench should build (plan.md S2.10).
+#: Resolved lazily because the Cedar half needs cedarpy, and the bench should
+#: still start without it.
+def executor_class(engine):
+    if engine != "cedar":
+        return ControlledAgentExecutor
+    from agentguard.executor import CedarControlledAgentExecutor  # noqa: PLC0415
+    return CedarControlledAgentExecutor
+
+
 def run(rule_text, user_input, tool_name, tool_input,
-        intermediate_steps=None, approve=True):
-    """Run the real ControlledAgentExecutor against one scripted action.
+        intermediate_steps=None, approve=True, engine="legacy"):
+    """Run one scripted action through one guard engine.
+
+    `engine` picks the executor directly rather than through $AGENTGUARD, so
+    compare mode can build one of each in the same process -- mutating the
+    environment around each build would be racy under a threaded server.
 
     `approve` answers any `user_inspection` prompt, which would otherwise
     block the server on stdin forever. Toggling it is how you exercise both
@@ -333,6 +348,7 @@ def run(rule_text, user_input, tool_name, tool_input,
         rules=parsed,
         verbose=True,
         max_iterations=3,
+        executor_cls=executor_class(engine),
     )
 
     trace = io.StringIO()
@@ -365,6 +381,7 @@ def run(rule_text, user_input, tool_name, tool_input,
         verdict = "NO ACTION"
 
     return {
+        "engine": engine,
         "verdict": verdict,
         "output": output,
         "tool_calls": tool_calls,
@@ -383,3 +400,55 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 def _clean(text):
     return ANSI.sub("", text).strip()
+
+
+# ------------------------------------------------------------------ compare
+
+#: What compare mode puts side by side. Each entry reads one run result.
+COMPARED = (
+    ("verdict", lambda r: r["verdict"]),
+    ("tool reached", lambda r: ", ".join(r["tool_calls"]) or "—"),
+    ("final output", lambda r: (r["output"] or "—")[:120]),
+    ("steps", lambda r: str(len(r["steps"]))),
+    ("what decided", lambda r: _decider(r)),
+)
+
+
+def _decider(result):
+    """Which rule or policy produced the outcome, in one line."""
+    if result["engine"] == "cedar":
+        cedar = result.get("cedar") or {}
+        names = [r["id"] for r in cedar.get("reasons", [])]
+        return ", ".join(f"@{n}" for n in names) or "—"
+    fired = [r["id"] for r in result.get("explain", []) if r["would_fire"]]
+    return ", ".join(f"@{n}" for n in fired) or "—"
+
+
+def compare(rule_text, user_input, tool_name, tool_input,
+            intermediate_steps=None, approve=True):
+    """Run one input through both engines and diff the outcomes (plan.md S2.10).
+
+    This is how an RQ1/RQ3 disagreement gets found by hand: the two engines see
+    the same call, and any row that differs is either a gap in the policy set or
+    a real semantic difference worth writing down. Three of the findings in
+    docs/findings.md started as a row in this table.
+    """
+    runs = {name: run(rule_text, user_input, tool_name, tool_input,
+                      intermediate_steps, approve, engine=name)
+            for name in ("legacy", "cedar")}
+
+    rows = []
+    for label, read in COMPARED:
+        try:
+            left, right = read(runs["legacy"]), read(runs["cedar"])
+        except Exception as exc:                        # noqa: BLE001
+            left = right = f"error: {exc}"
+        rows.append({"aspect": label, "legacy": left, "cedar": right,
+                     "same": left == right})
+
+    return {
+        "mode": "compare",
+        "runs": runs,
+        "rows": rows,
+        "agree": runs["legacy"]["verdict"] == runs["cedar"]["verdict"],
+    }

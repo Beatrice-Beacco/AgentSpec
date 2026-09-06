@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 2, Step S2.10 (bench engine toggle + compare mode).
+**Current position:** Sprint 2 complete. Next: Sprint 3, Step S3.1 (grammar fixes) — or cut Sprint 3 per the risk table and go straight to Sprint 4.
 
 ---
 
@@ -281,15 +281,26 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       because it evaluates 25 sensors per step where AgentSpec evaluates 1–2. Both
       written up in `docs/findings.md` with the decomposition.
 
-- [ ] **S2.10** Bench: add an **engine toggle** (legacy ⇄ cedar) and render the
+- [x] **S2.10** Bench: add an **engine toggle** (legacy ⇄ cedar) and render the
       resolved advice plus the policy ids from `diagnostics.reasons`. Add a
       "compare both" mode that runs one input through both engines and diffs the
-      verdicts — this is how RQ1/RQ3 disagreements get found by hand.
-      *Accept:* toggling the engine on example 1 shows both verdicts and the
-      policies responsible.
+      verdicts — this is how RQ1/RQ3 disagreements get found by hand. ✅ 2026-09-06
+      The toggle picks the executor **directly** (new `executor_cls=` on
+      `initialize_controlled_agent`) rather than through `$AGENTGUARD`, so compare
+      mode builds one of each in the same process — mutating the environment around
+      each build would be racy under a threaded server.
+      The Cedar panel now shows the raw positional `diagnostics.reasons` id beside
+      the human `@id`, which is what makes the S2.8 claim legible.
+      *Accept:* ✅ example 1 → both STOPPED, **"what decided" differs**
+      (`@block_file_deletion` vs `@no_destructive_os_call`); example 3 → **"the
+      engines disagree"**, ALLOWED vs STOPPED, every row flagged.
 
-**Sprint 2 exit:** `agentguard/` is the real engine, both engines pass the same suite,
-RQ5 and RQ6 have preliminary numbers.
+**Sprint 2 exit:** ✅ 2026-09-06 — `agentguard/` is the real engine (7 modules,
+`executor.py` reduced to the LangChain binding); both engines run the same suite
+(`make test` 445 passed / `make test-cedar` 428 passed, 17 documented skips, 0 failed);
+**RQ6 answered** in `tests/test_fail_closed.py` and **RQ5 measured** in
+`docs/cedar-latency.md` — with two of the plan's expectations corrected rather than
+confirmed. Seven corpus defects are written up in [`docs/findings.md`](docs/findings.md).
 
 ---
 
@@ -490,3 +501,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-06 | S2.7 | Parity, with the criterion read honestly rather than literally. `make test-cedar`: **417 passed, 15 skipped, 0 failed** — every skip carries its reason and `-rs` prints them. All 15 have an AgentSpec *rule* as their subject: most are blocked on S3.3 (until a rule can become a policy the Cedar engine has nothing to decide on), and **two can never pass by design** — `test_first_matching_rule_decides` and `test_order_dependence_is_real` assert that swapping two rules flips the verdict, which is exactly the property the lattice removes. A literal "every test passes under both" would have required either deleting those or making Cedar order-dependent; both are worse than a documented skip. **Settled the where-does-policy-live question** that surfaced at S1.8, S2.5 and S1.7: policy is **ambient**, read from `$AGENTGUARD_POLICIES`, because a guard whose rule set arrives as a constructor argument is opt-in per construction site — the code being guarded can construct itself unguarded. That is a design claim, not a measurement, and it is labelled as one. It also has a cost: "run with these rules" has no direct equivalent, so `test_no_rules_means_no_interference` needed a translation (baseline-permit-only policy set) rather than a comparison — and now passes on **both** engines, which is the question in executable form. |
 | 2026-09-06 | S2.8 | M2 measured rather than argued. The same three guards — suppress / halt / pass-through — written once as AgentSpec rules and once as Cedar policies, under all six orderings: **AgentSpec produces 2 distinct verdicts, AgentGuard produces 1** (and 1 across 100 random shuffles). Nothing changes but the order they are listed in, so a reviewer reading an AgentSpec rule file cannot tell what the guard will do without also knowing the order — and neither can a tool, which is what blocks the Sprint 5 analysis for the baseline. Two things make it a real result rather than a tautology: every shuffle goes through `engine.load()` on disk, so Cedar reassigns the synthetic ids **by position** each time and a resolution keyed on them would break; and Cedar still does not return determining policies in source order, re-checked here, so "take the first" was never a defensible design. Also pinned sensor-order independence, which §C.4 claims alongside policy order — it holds now and would stop holding the moment a sensor gained a side effect another could observe. |
 | 2026-09-06 | S2.9 | Cedar profiled, and **two expectations the plan carried since S0.11 did not survive it**. The architectural claim did: `rule_parse` is exactly **0.0%** of AgentGuard's guard against **79.2%** of AgentSpec's. But (1) *"the policy engine is free; detection is the cost"* is **not supported at these input sizes** — detection 0.5104 ms against decision 0.5067 ms, within 1%. The slogan was extrapolated from S1.4's 0.058 ms spike, which used a 1-flag request with no schema and no entity store; on the real request the decision is 0.2341 ms, of which **passing the `Schema` on every call is +0.087 ms — over a third**, the entity store +0.029, and the 24 extra flags +0.039. So the decision cost is dominated by **marshalling across the Python/Rust boundary, not by evaluating policies**, which is both more useful and names an optimisation (hoist the parsed schema). And (2) **AgentGuard's guard total is 2.3× AgentSpec's** — reported plainly, because the cause is our S2.3 choice to materialise the whole domain (25 sensors per step vs the 1–2 AgentSpec names), not a cost Cedar imposes; S2.3 already measured the lever at 25→1. Methodological fix worth keeping: a profiling run builds executors of both kinds, so steps are now tagged with `engine` and the report filters — the first measurement blended them and showed a nonzero `rule_parse` under Cedar. Also pinned the report's output encoding: on Windows the `·` separator was being written as cp1252 and the frozen `.md` was not valid UTF-8. |
+| 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |

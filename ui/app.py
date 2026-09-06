@@ -80,11 +80,11 @@ def state():
         "library": _library(),
         "examples": EXAMPLES,
         "predicates": sorted(predicate_table),
-        # Which engine the *run* goes through. The Cedar panel is shown either
-        # way -- it decides the same call independently -- but with
-        # AGENTGUARD=cedar the "Why - per rule" panel describes rules that no
-        # longer decide anything, so the header has to say so.
+        # The *default* engine. Since S2.10 the bench picks per request, so
+        # this only seeds the toggle -- $AGENTGUARD still decides what a run
+        # does if the caller does not say.
         "engine": "cedar" if agentguard.enabled() else "legacy",
+        "engines": ["legacy", "cedar", "both"],
     })
 
 
@@ -110,15 +110,21 @@ def probe():
 @app.post("/api/run")
 def run():
     body = request.json
+    args = (
+        body.get("rule_text", ""),
+        body.get("user_input", ""),
+        body.get("tool_name", "python_repl"),
+        body.get("tool_input", ""),
+        body.get("intermediate_steps") or [],
+    )
+    approve = bool(body.get("approve", True))
+    # The engine is chosen per request rather than from $AGENTGUARD, so compare
+    # mode can build one of each without mutating the environment (S2.10).
+    which = body.get("engine") or ("cedar" if agentguard.enabled() else "legacy")
     try:
-        return jsonify(engine.run(
-            body.get("rule_text", ""),
-            body.get("user_input", ""),
-            body.get("tool_name", "python_repl"),
-            body.get("tool_input", ""),
-            body.get("intermediate_steps") or [],
-            approve=bool(body.get("approve", True)),
-        ))
+        if which == "both":
+            return jsonify(engine.compare(*args, approve=approve))
+        return jsonify(engine.run(*args, approve=approve, engine=which))
     except Exception as exc:                            # noqa: BLE001
         import traceback
         return jsonify({"verdict": "ERROR", "error": traceback.format_exc(),

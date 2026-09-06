@@ -192,3 +192,67 @@ def test_rule_writes_are_confined_to_the_library():
     assert app._safe("ui/rules/scratch.ar").endswith(
         os.path.join("ui", "rules", "scratch.ar")
     )
+
+
+# ------------------------------------------------- engine toggle (S2.10)
+
+def test_the_bench_can_run_either_engine():
+    """The toggle picks the executor directly, not through $AGENTGUARD -- so
+    compare mode can build one of each without mutating the environment."""
+    from agentguard.executor import CedarControlledAgentExecutor  # noqa: PLC0415
+    from controlled_agent_excector import ControlledAgentExecutor  # noqa: PLC0415
+
+    assert engine.executor_class("legacy") is ControlledAgentExecutor
+    assert engine.executor_class("cedar") is CedarControlledAgentExecutor
+
+
+@pytest.mark.parametrize("which", ["legacy", "cedar"])
+def test_a_run_reports_which_engine_decided_it(which):
+    ex = example("1.")
+    result = engine.run(ex["rule_text"], ex["user_input"], ex["tool_name"],
+                        ex["tool_input"], engine=which)
+    assert result["engine"] == which
+    assert result["verdict"] == "STOPPED"
+
+
+def test_compare_runs_both_and_marks_every_difference():
+    """S2.10's acceptance test, on example 1."""
+    ex = example("1.")
+    result = engine.compare(ex["rule_text"], ex["user_input"], ex["tool_name"],
+                            ex["tool_input"])
+
+    assert result["mode"] == "compare"
+    assert set(result["runs"]) == {"legacy", "cedar"}
+    assert result["agree"] is True
+    assert result["runs"]["legacy"]["verdict"] == "STOPPED"
+    assert result["runs"]["cedar"]["verdict"] == "STOPPED"
+
+    decided = next(r for r in result["rows"] if r["aspect"] == "what decided")
+    assert decided["legacy"] == "@block_file_deletion"
+    assert decided["cedar"] == "@no_destructive_os_call"
+    assert decided["same"] is False, "the two name different things and should say so"
+
+
+def test_compare_finds_the_example_3_disagreement():
+    """The mode exists to find these by hand; it finds the one we already know."""
+    result = engine.compare(*(example("3.")[k] for k in
+                              ("rule_text", "user_input", "tool_name", "tool_input")))
+
+    assert result["agree"] is False
+    verdicts = {name: run["verdict"] for name, run in result["runs"].items()}
+    assert verdicts == {"legacy": "ALLOWED", "cedar": "STOPPED"}
+
+
+def test_the_api_dispatches_on_the_requested_engine():
+    import app                                    # noqa: PLC0415
+
+    client = app.app.test_client()
+    ex = example("1.")
+    body = {"rule_text": ex["rule_text"], "user_input": ex["user_input"],
+            "tool_name": ex["tool_name"], "tool_input": ex["tool_input"]}
+
+    assert client.post("/api/run", json={**body, "engine": "cedar"}) \
+        .get_json()["engine"] == "cedar"
+    assert client.post("/api/run", json={**body, "engine": "both"}) \
+        .get_json()["mode"] == "compare"
+    assert "both" in client.get("/api/state").get_json()["engines"]
