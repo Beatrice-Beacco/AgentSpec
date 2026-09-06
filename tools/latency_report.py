@@ -7,11 +7,14 @@
 Reports per-phase mean/median/p95 and, for the guard phases, their share of the
 step. Used for plan.md S0.11 (baseline) and again at S2.9 to compare Cedar.
 """
+import argparse
+import collections
 import json
 import sys
 from statistics import mean, median
 
-PHASES = ["llm_plan", "rule_parse", "predicate_eval", "enforcement"]
+PHASES = ["llm_plan", "rule_parse", "predicate_eval", "cedar_decide",
+          "enforcement"]
 
 
 def pct(values, q):
@@ -21,11 +24,29 @@ def pct(values, q):
     return ordered[min(len(ordered) - 1, int(round(q * (len(ordered) - 1))))]
 
 
-def main(path):
-    rows = [json.loads(line) for line in open(path) if line.strip()]
+def main(path, engine=None):
+    # `make profile-freeze` redirects this into a committed .md, and on Windows
+    # the console codepage would otherwise write cp1252 bytes that are not valid
+    # UTF-8. Pin the encoding so the artifact is identical on every platform.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):                # pragma: no cover
+        pass
+
+    rows = [json.loads(line) for line in open(path, encoding="utf-8")
+            if line.strip()]
     if not rows:
         print(f"{path}: empty")
         return 1
+
+    # A profiling run can build executors of both kinds -- several tests compare
+    # the engines directly -- so blending their steps would report a chimera.
+    seen = collections.Counter(r.get("engine", "unknown") for r in rows)
+    if engine:
+        rows = [r for r in rows if r.get("engine") == engine]
+        if not rows:
+            print(f"{path}: no steps from the {engine!r} engine (saw {dict(seen)})")
+            return 1
 
     # A step where no rule triggered says nothing about guard cost; reporting
     # those together with real evaluations would halve every average.
@@ -37,10 +58,12 @@ def main(path):
     print("|---|---:|---:|---:|---:|")
 
     guard_total = sum(
-        sum(r[f"{p}_ms"] for p in PHASES if p != "llm_plan") for r in guarded
+        sum(r.get(f"{p}_ms", 0.0) for p in PHASES if p != "llm_plan")
+        for r in guarded
     )
     for phase in PHASES:
-        values = [r[f"{phase}_ms"] for r in (guarded if phase != "llm_plan" else rows)]
+        values = [r.get(f"{phase}_ms", 0.0)
+                  for r in (guarded if phase != "llm_plan" else rows)]
         share = ""
         if phase != "llm_plan" and guard_total:
             share = f"{100 * sum(values) / guard_total:.1f}%"
@@ -60,4 +83,8 @@ def main(path):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "expres/latency/baseline.jsonl"))
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("path", nargs="?", default="expres/latency/baseline.jsonl")
+    parser.add_argument("--engine", help="report only steps guarded by this engine")
+    args = parser.parse_args()
+    sys.exit(main(args.path, args.engine))

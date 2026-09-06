@@ -1,5 +1,5 @@
 from langchain.agents.agent import AgentExecutor
-from typing import Optional
+from typing import ClassVar, Optional
 from typing import List, Union
 from agent import Action
 import json
@@ -32,6 +32,14 @@ from typing import Dict
 NextStepOutput = List[Union[AgentFinish, AgentAction, AgentStep]]
 
 class ControlledAgentExecutor(AgentExecutor) : 
+    # Which guard engine produced a profiled step. Instrumentation only -- the
+    # Cedar subclass overrides it, and tools/latency_report.py filters on it so
+    # a run that builds both kinds of executor does not blend their timings
+    # (plan.md S2.9).
+    # ClassVar, not a field: AgentExecutor is a pydantic model, and an
+    # annotated attribute would become part of its schema.
+    GUARD_ENGINE: ClassVar[str] = "legacy"
+
     rules: Optional[List[Rule]]
     user_input: Optional[Dict[str, Any]] = None
    
@@ -104,7 +112,8 @@ class ControlledAgentExecutor(AgentExecutor) :
         """
         try:
             intermediate_steps = self._prepare_intermediate_steps(intermediate_steps) 
-            profiling.begin_step(step=len(intermediate_steps))
+            profiling.begin_step(step=len(intermediate_steps),
+                                 engine=self.GUARD_ENGINE)
             # Call the LLM to see what to do.
             with profiling.phase("llm_plan"):
                 output = self._action_agent.plan(
@@ -202,6 +211,7 @@ def initialize_controlled_agent(
     agent_kwargs: Optional[dict] = None,
     *,
     tags: Optional[Sequence[str]] = None,
+    executor_cls=None,
     **kwargs: Any,
 ) -> ControlledAgentExecutor:
     """Load an agent executor given tools and LLM.
@@ -215,6 +225,8 @@ def initialize_controlled_agent(
             not provided. Defaults to None.
         agent_path: Path to serialized agent to use. If None and agent is also None,
             will default to AgentType.ZERO_SHOT_REACT_DESCRIPTION. Defaults to None.
+        executor_cls: Guard engine to build. Defaults to whatever $AGENTGUARD
+            selects.
         agent_kwargs: Additional keyword arguments to pass to the underlying agent.
             Defaults to None.
         tags: Tags to apply to the traced runs. Defaults to None.
@@ -262,7 +274,12 @@ def initialize_controlled_agent(
             "Somehow both `agent` and `agent_path` are None, "
             "this should never happen."
         )
-    return ControlledAgentExecutor.from_agent_and_tools(
+    # executor_cls lets a caller pick the engine directly. $AGENTGUARD is the
+    # default, but reading a global at construction makes it impossible to build
+    # one of each in the same process -- which the bench's compare mode does, and
+    # mutating os.environ around each build would be racy under a threaded
+    # server (plan.md S2.10).
+    return (executor_cls or _executor_class()).from_agent_and_tools(
         agent=agent_obj,
         tools=tools,
         rules=rules,
@@ -270,4 +287,27 @@ def initialize_controlled_agent(
         tags=tags_,
         **kwargs,
     )
+
+
+def _executor_class():
+    """Which guard engine to build: AGENTGUARD=cedar picks the Cedar one.
+
+    Read here rather than at import so a single process can build one of each,
+    which is what the bench's compare mode (plan.md S2.10) needs. The import is
+    function-local because agentguard imports *this* module.
+    """
+    import os
+    import sys
+
+    if os.environ.get("AGENTGUARD", "legacy").strip().lower() != "cedar":
+        return ControlledAgentExecutor
+
+    # agentguard/ lives at the repo root, which is not necessarily on sys.path:
+    # src/ modules are imported flatly, so the entry point may well have added
+    # only src/. Same wart as tests/conftest.py, same reason.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from agentguard.executor import CedarControlledAgentExecutor
+    return CedarControlledAgentExecutor
 

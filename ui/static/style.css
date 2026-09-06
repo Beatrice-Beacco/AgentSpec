@@ -110,3 +110,6 @@ summary:hover { color: var(--ink); }
 .doc p, .doc li { max-width: 76ch; }
 .doc table { margin: 10px 0; }
 .doc code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+
+/* Compare mode (plan.md S2.10): a differing row is the interesting output. */
+tr.differs th, tr.differs td { background: var(--bad-bg); }

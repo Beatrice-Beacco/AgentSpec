@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1, Step S1.5 (first real schema).
+**Current position:** Sprint 2 complete. Next: Sprint 3, Step S3.1 (grammar fixes) — or cut Sprint 3 per the risk table and go straight to Sprint 4.
 
 ---
 
@@ -113,23 +113,51 @@ Resolve every unknown here, before writing real code.
       A whole Cedar decision costs **less than AgentSpec spends on parsing alone**
       (0.1512 ms) and 3.3× less than its full guard path (0.1919 ms) — while doing
       more work: 3 policies, schema validation, order-independent result.
-- [ ] **S1.5** Write the first real schema `policies/schema.cedarschema` — just `Agent`,
-      `Tool`, `action invoke`, and a `context` with `flags: Set<String>`.
-      *Accept:* `validate_policies()` passes against a hand-written policy.
-- [ ] **S1.6** Write `policies/core.cedar` with two policies: a baseline `permit`, and a
-      `forbid` for `destuctive_os_inst` carrying `@advice("stop")`.
-- [ ] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
-      one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`.
-      *Accept:* `smoke_test.py` passes **both** scenarios with `AGENTGUARD=cedar` set,
-      producing the same verdicts as the original engine.
+- [x] **S1.5** Write the first real schema `policies/schema.cedarschema` — just `Agent`,
+      `Tool`, `action invoke`, and a `context` with `flags: Set<String>`. ✅ 2026-09-05
+      Namespaced `AgentGuard` per thesis §C.2, so the skeleton is a precursor and not
+      a throwaway. `tools/validate_policies.py` (`make validate`) is the load-time
+      gate S2.5 will call; `tests/test_schema.py` pins six malformed-policy classes
+      as rejected and the one known hole as still open.
+      *Accept:* ✅ `test_hand_written_policy_validates` — and both verdicts are
+      reachable through the real file, not just a validating string.
+- [x] **S1.6** Write `policies/core.cedar` with two policies: a baseline `permit`, and a
+      `forbid` for `destuctive_os_inst` carrying `@advice("stop")`. ✅ 2026-09-05
+      The baseline is unconditional on purpose — a fail-closed one would change the
+      verdicts S1.7 has to match, so it moves to S2.7 with the parity suite.
+      `tools/validate_policies.py` grew an **annotation lint**: Cedar treats
+      annotations as opaque strings, so a typo'd `@advice("stopp")` validates
+      cleanly and then crashes the resolver.
+      *Accept:* ✅ `make validate` green; `tests/test_core_policies.py` (13 tests)
+      reaches both verdicts through the real file and carries `stop` back out.
+- [x] **S1.7** Wire it in: `agentguard/executor.py` with `CedarControlledAgentExecutor`,
+      one hard-coded sensor (`destuctive_os_inst`), behind an env flag `AGENTGUARD=cedar`. ✅ 2026-09-05
+      Overrides exactly one method — `validate_and_enforce` — so the ReAct loop, the
+      enforcement classes and the observation text are shared and a verdict difference
+      is a difference in *deciding*. Seams for S2.1–S2.6 are marked in place.
+      *Accept:* ✅ scenarios A and B (`smoke_test.py`'s, now
+      `tests/test_enforcement.py`'s) pass under `AGENTGUARD=cedar` with the same
+      verdicts; `tests/test_cedar_executor.py` (31 tests) runs the comparison itself
+      rather than asserting it twice by hand.
+      **`make test-cedar` forces the whole suite onto Cedar: 110/122 pass already.**
+      The 12 failures are all legacy-rule tests the two-policy set cannot cover — the
+      S2.7 worklist, measured rather than guessed.
 
-- [ ] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
+- [x] **S1.8** Wire the bench's **Cedar decision** panel (currently a placeholder):
       show Allow/Deny and the raw `diagnostics` for the same input the legacy engine
-      just ran, so the two are visible side by side.
-      *Accept:* `make ui` shows a real Cedar verdict for example 1.
+      just ran, so the two are visible side by side. ✅ 2026-09-05
+      Shows the decision, the enforcement outcome it resolves to, an agrees/differs
+      badge against the legacy verdict, the materialised `context.flags`, and each
+      determining policy with its `@advice` and `@source`. A decision, not a second
+      agent run. The engine toggle and full compare mode stay with S2.10.
+      *Accept:* ✅ example 1 → **Deny · resolves to STOPPED · agrees**, naming
+      `@no_destructive_os_call`; example 3 → **Deny · differs — legacy said ALLOWED**.
+      Pinned by `tests/test_ui_examples.py`.
 
-**Sprint 1 exit:** the same smoke test passes through either engine. Screenshot it —
-it goes in the thesis.
+**Sprint 1 exit:** ✅ 2026-09-05 — the same scenarios pass through either engine
+(`make test-cedar`: 110/122 of the *whole* suite already), and the bench shows both
+verdicts on one screen. Screenshot the bench on example 1 (agrees) and example 3
+(differs) — the pair is the thesis figure, not just one of them.
 
 ---
 
@@ -137,48 +165,142 @@ it goes in the thesis.
 
 Goal: a real, tested `agentguard/` package. No hard-coding left.
 
-- [ ] **S2.1** `agentguard/sensors.py` — a registry wrapping all 36 predicates from
+- [x] **S2.1** `agentguard/sensors.py` — a registry wrapping all 36 predicates from
       `rules.manual.table.predicate_table`, each with metadata: name, domain
-      (code/embodied/toolemu), cost hint, which flags it can set.
-      *Accept:* `len(SENSORS) == 36`; `pytest tests/test_sensors.py` green.
-- [ ] **S2.2** `agentguard/schema.py` — generate `schema.cedarschema` **from** the sensor
+      (code/embodied/toolemu), cost hint, which flags it can set. ✅ 2026-09-06
+      Metadata is **derived** from the predicates (AST for `reads`, defining module
+      for `domain`, `reads` for `cost`), not hand-listed — so adding a predicate
+      needs no edit here, which is what S2.2's "no hand-editing" depends on.
+      `make sensors` prints the table. Cost scale is `input < history < model`.
+      *Accept:* ✅ `len(SENSORS) == 36`; `tests/test_sensors.py` — 22 tests, each
+      re-deriving independently rather than restating the module's own tables.
+      ⚠️ **The third domain does not exist.** 25 code + 11 embodied; `toolemu.py` is
+      an empty file and `terminal.py`'s 4 predicates are never merged into
+      `predicate_table`. Carry into S3.4 and S6.3, which both assume otherwise.
+- [x] **S2.2** `agentguard/schema.py` — generate `schema.cedarschema` **from** the sensor
       registry, so flags are a validated record-of-bools rather than free strings.
-      Keep the `Set<String>` variant behind a flag so we can compare both (thesis §C.2).
-      *Accept:* regenerating the schema after adding a sensor requires no hand-editing.
-- [ ] **S2.3** `agentguard/request.py` — materialisation: `RuleState → (Request, Entities)`.
-      Runs sensors, builds principal/action/resource/context.
-      *Accept:* golden-file test: a fixed `RuleState` produces a fixed JSON request.
-- [ ] **S2.4** `agentguard/advice.py` — the advice lattice
+      Keep the `Set<String>` variant behind a flag so we can compare both (thesis §C.2). ✅ 2026-09-06
+      `make schema` regenerates; `make validate` now **fails if the file on disk has
+      drifted** from the registry, so a hand-edited schema cannot ship. The variant is
+      recorded in the generated header and read back by the request builder, so the two
+      cannot disagree. Both variants stay generatable for the §C.2 comparison.
+      ⚠️ **The Bools are optional (`name?: Bool`), which the plan did not anticipate** —
+      required attributes would force the request to carry all 36 flags or Cedar answers
+      `NoDecision`, i.e. send `false` for 35 sensors that never ran. See the log.
+      *Accept:* ✅ `tests/test_schema_codegen.py` (17 tests) adds a flag and regenerates
+      with no template change; S1.5's "misspelled flag is missed" test has flipped to
+      `test_a_misspelled_flag_is_now_caught`.
+- [x] **S2.3** `agentguard/request.py` — materialisation: `RuleState → (Request, Entities)`.
+      Runs sensors, builds principal/action/resource/context. ✅ 2026-09-06
+      Sensors are now selected **by domain**, not by name — the hard-coded single
+      sensor is gone and the whole 25-sensor code domain runs. A sensor that raises
+      is recorded and its flag left *absent* (= "not evaluated"), and the engine
+      stops rather than deciding on evidence it failed to gather.
+      `make golden` regenerates the golden request; review its diff, it is what
+      every policy sees.
+      *Accept:* ✅ `tests/test_request.py` (13 tests) against
+      `tests/golden/request_python_repl.json`.
+      ⚠️ Running the whole domain immediately exposed **three corpus defects** —
+      see [`docs/findings.md`](docs/findings.md) D-1…D-4.
+- [x] **S2.4** `agentguard/advice.py` — the advice lattice
       (`stop > user_inspection > llm_self_reflect > skip > allow`), plus the rule that
-      `substitute` only applies when it is the unique determining policy.
-      *Accept:* `pytest tests/test_advice.py` covers every pair in the lattice.
-- [ ] **S2.5** `agentguard/engine.py` — load policies, **validate against the schema at
-      startup and refuse to start on failure**, evaluate, resolve advice.
-      *Accept:* **S0.12's xfail test now passes.** Flip it from xfail to a real assertion.
-      This is RQ6 — write the result down the day it goes green.
-- [ ] **S2.6** `agentguard/enforcer.py` — map advice onto the existing `enforcement.py`
-      classes (reuse them; don't rewrite).
-      *Accept:* one test per enforcement mode, all green.
-- [ ] **S2.7** Finish `agentguard/executor.py` — no hard-coding, feature-flag parity.
-      *Accept:* every test in `tests/` passes under both `AGENTGUARD=legacy` and `=cedar`.
-- [ ] **S2.8** Property test: **order independence.** Shuffle the policy set 100× and
+      `substitute` only applies when it is the unique determining policy. ✅ 2026-09-06
+      `resolve()` is **total** — every input yields a Resolution and anything it
+      cannot make sense of lands on `stop`, because raising here would put an
+      exception between the agent and its guard exactly when the guard matters.
+      The lattice had been duplicated in `tools/validate_policies.py`; that copy is
+      gone, and the lint now also rejects `@advice("substitute")` with no
+      `@substitute_tool`.
+      *Accept:* ✅ `tests/test_advice.py` — 208 tests: all **25 ordered pairs**, plus
+      idempotence, commutativity, associativity and absorption, which is what makes
+      order-independence (M2) a theorem rather than a hope.
+      ⚠️ **Substitution is unreachable in the baseline** — findings D-5. Anything we
+      build here is a capability *addition*, not an improvement on a measured
+      baseline, and the write-up has to say so.
+- [x] **S2.5** `agentguard/engine.py` — load policies, **validate against the schema at
+      startup and refuse to start on failure**, evaluate, resolve advice. ✅ 2026-09-06
+      Four startup checks, not one: Cedar's validator, the `@advice` lint (which until
+      now only the CLI ran), `@id` traceability, and a **coverage check** — every flag
+      a policy reads must be one the configured domain will actually materialise.
+      *Accept:* ~~flip S0.12's xfails~~ → **`tests/test_fail_closed.py`** (20 tests),
+      paired one-to-one with `test_fail_open.py`. The xfails are **deliberately not
+      flipped**: they assert on `Rule.from_text`, so passing them means patching
+      `src/rule.py` — and then every comparison in the thesis is against a baseline we
+      repaired rather than against AgentSpec. Rationale written into both files.
+      ⚠️ **Correction to S2.2:** the `has` guard reopens the misspelled-flag hole the
+      record schema closed, and the guarded form is the only one Cedar accepts — so the
+      coverage check, not the schema, is what closes it. See `docs/findings.md`.
+      RQ6 written up there the day it went green.
+- [x] **S2.6** `agentguard/enforcer.py` — map advice onto the existing `enforcement.py`
+      classes (reuse them; don't rewrite). ✅ 2026-09-06
+      The five lattice outcomes are applied by AgentSpec's own unmodified classes.
+      Two need an adapter, both because the baseline is **broken**, not because we
+      disagreed: `llm_self_reflect` returns a raw LangChain object and crashes the
+      recursion (**D-6**), and `substitute` has no working class to reuse (**D-5**),
+      so this is the one place we add behaviour. A redirect (re-plan or rewrite) is
+      **guarded again**, bounded by `MAX_REDIRECTS` — otherwise `@substitute_tool`
+      would be a way around the guard.
+      *Accept:* ✅ `tests/test_enforcer.py` — one test per mode (six: five lattice +
+      substitute), plus the fail-closed cases and three end-to-end runs.
+      ⚠️ **D-7:** 40 of 61 `enforce` clauses in the corpus use one of the two outcomes
+      that actually work.
+- [x] **S2.7** Finish `agentguard/executor.py` — no hard-coding, feature-flag parity. ✅ 2026-09-06
+      Policy directory and domain are now `$AGENTGUARD_POLICIES` / `$AGENTGUARD_DOMAIN`;
+      nothing about the deployment is baked in. **Settled where policy lives**: ambient,
+      not a constructor argument — a guard whose rule set the caller supplies is opt-in
+      per construction site. Written up in `docs/findings.md`.
+      *Accept:* ✅ `make test-cedar` → **417 passed, 15 skipped, 0 failed**.
+      ⚠️ Read the criterion honestly. The 15 skips all have an AgentSpec *rule* as
+      their subject; most are blocked on **S3.3** (no compiler, nothing to decide on),
+      and **two can never pass** — they assert order dependence, which the lattice
+      removes by construction. Every test now either passes on both engines or carries
+      a reason for belonging to one. `test_no_rules_means_no_interference` was made
+      genuinely engine-agnostic, which is the ambient-policy question in executable form.
+- [x] **S2.8** Property test: **order independence.** Shuffle the policy set 100× and
       assert the verdict never changes. Then do the same with AgentSpec's rule list and
-      show that it *does* change.
-      *Accept:* `tests/test_order_independence.py` green for Cedar, and a documented
-      counterexample for the legacy engine in `docs/findings.md`.
-      *(This is a free, high-value thesis result. Don't skip it.)*
-- [ ] **S2.9** Re-run the latency instrumentation with the Cedar engine.
-      *Accept:* `expres/latency/cedar.jsonl`; sensors vs. decision split recorded.
+      show that it *does* change. ✅ 2026-09-06
+      Same three guards, expressed both ways, under every ordering:
+      **AgentSpec gives 2 distinct verdicts from 6 orderings; AgentGuard gives 1** —
+      and 1 from 100 random shuffles besides. Every shuffle goes through
+      `engine.load()` on disk, so Cedar reassigns the positional synthetic ids each
+      time; a resolution keyed on those would break here.
+      Sensor order is checked too (thesis §C.4 claims both).
+      *Accept:* ✅ `tests/test_order_independence.py` (7 tests) + the counterexample
+      table in [`docs/findings.md`](docs/findings.md).
+- [x] **S2.9** Re-run the latency instrumentation with the Cedar engine. ✅ 2026-09-06
+      Added the `cedar_decide` phase deferred from S1.7, and an `engine` tag per step —
+      a profiling run builds executors of both kinds, so the first measurement was a
+      blend of the two. `make profile-cedar` / `profile-cedar-freeze`.
+      *Accept:* ✅ `expres/latency/cedar.jsonl` + [`docs/cedar-latency.md`], with
+      `docs/baseline-latency.md` re-frozen from the same run so the two compare.
+      **`rule_parse` is 0.0% for Cedar against 79.2% for AgentSpec** — the
+      architectural claim holds.
+      ⚠️ **Two expectations did not survive contact.** "The engine is free; detection is
+      the cost" is *not* supported at these input sizes — detection 0.5104 ms vs
+      decision 0.5067 ms — and AgentGuard's guard total is **2.3× AgentSpec's**,
+      because it evaluates 25 sensors per step where AgentSpec evaluates 1–2. Both
+      written up in `docs/findings.md` with the decomposition.
 
-- [ ] **S2.10** Bench: add an **engine toggle** (legacy ⇄ cedar) and render the
+- [x] **S2.10** Bench: add an **engine toggle** (legacy ⇄ cedar) and render the
       resolved advice plus the policy ids from `diagnostics.reasons`. Add a
       "compare both" mode that runs one input through both engines and diffs the
-      verdicts — this is how RQ1/RQ3 disagreements get found by hand.
-      *Accept:* toggling the engine on example 1 shows both verdicts and the
-      policies responsible.
+      verdicts — this is how RQ1/RQ3 disagreements get found by hand. ✅ 2026-09-06
+      The toggle picks the executor **directly** (new `executor_cls=` on
+      `initialize_controlled_agent`) rather than through `$AGENTGUARD`, so compare
+      mode builds one of each in the same process — mutating the environment around
+      each build would be racy under a threaded server.
+      The Cedar panel now shows the raw positional `diagnostics.reasons` id beside
+      the human `@id`, which is what makes the S2.8 claim legible.
+      *Accept:* ✅ example 1 → both STOPPED, **"what decided" differs**
+      (`@block_file_deletion` vs `@no_destructive_os_call`); example 3 → **"the
+      engines disagree"**, ALLOWED vs STOPPED, every row flagged.
 
-**Sprint 2 exit:** `agentguard/` is the real engine, both engines pass the same suite,
-RQ5 and RQ6 have preliminary numbers.
+**Sprint 2 exit:** ✅ 2026-09-06 — `agentguard/` is the real engine (7 modules,
+`executor.py` reduced to the LangChain binding); both engines run the same suite
+(`make test` 445 passed / `make test-cedar` 428 passed, 17 documented skips, 0 failed);
+**RQ6 answered** in `tests/test_fail_closed.py` and **RQ5 measured** in
+`docs/cedar-latency.md` — with two of the plan's expectations corrected rather than
+confirmed. Seven corpus defects are written up in [`docs/findings.md`](docs/findings.md).
 
 ---
 
@@ -324,8 +446,9 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 
 - [ ] **W.1** Draft thesis Chapters 1, 2 (background) and 8 (related work) **during
       Sprints 0–2**, while the code is slow. Do not leave writing to Sprint 7.
-- [ ] **W.2** Keep `docs/findings.md` as a running lab notebook — every surprise,
+- [x] **W.2** Keep `docs/findings.md` as a running lab notebook — every surprise,
       every bug, every counterexample, dated. Findings evaporate if not written down.
+      Started 2026-09-06 at S2.3 with D-1…D-4. **Keep adding to it.**
 - [ ] **W.3** After each sprint: update this file, commit, and push `dev-foued`.
 - [ ] **W.4** After **every step**: run `make test`, then exercise the change in the
       bench (`make ui`). If a step adds behaviour the bench cannot show, extend the
@@ -364,3 +487,18 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.2 | **Unblocked, but not the way the plan assumed.** `diagnostics.id_annotations_by_reason` carries only `@id` — the name is accurate and the plan misread it. `policies_to_json_str()` carries every annotation, keyed by the same `policy0/1/2` ids `diagnostics.reasons` returns, so the side-table joins directly and is built by cedarpy's own Cedar parser rather than a regex. None of the three fallbacks the plan listed are needed. Second finding: **Cedar does not return determining policies in source order** — for a two-forbid decision it returned `['policy2','policy1']`. Anything reading "the first determining policy" would be reading an unspecified ordering; the lattice join makes it irrelevant by construction. That is the concrete mechanism behind M2, and it hands S2.8 its property to test. |
 | 2026-09-05 | S1.3 | Validation catches typo'd context and entity attributes, type mismatches, unknown entity types and unknown actions — all at load, none of which AgentSpec can detect at all. Unplanned bonus: the spike **answers S2.2 five weeks early**. The same misspelled flag is missed under `flags: Set<String>` (any string is a valid member, so the policy type-checks and silently never fires) and caught under `flags: { name: Bool, ... }`. A silently-never-firing safety rule is the exact failure mode S0.12 documented, so the record-of-`Bool` codegen is now evidence-backed rather than a preference. |
 | 2026-09-05 | S1.4 | 0.0579 ms mean / 0.0772 ms p99 per decision with a pre-parsed `PolicySet`. Passing policy text instead costs 2× — worth knowing before writing the engine, since it is the same mistake AgentSpec makes. Against S0.11: a whole Cedar decision is cheaper than AgentSpec's *parsing phase alone*, and 3.3× cheaper than its whole guard path, while evaluating three policies with schema validation and an order-independent result. RQ5's honest headline is still "the engine is free, detection is the cost" — this is a ratio, not a latency problem. |
+| 2026-09-05 | S1.5 | First real schema landed, namespaced `AgentGuard` per thesis §C.2 — the spikes were namespace-free, and paying that cost now beats rewriting the corpus at S3.4. Kept strictly smaller than §C.2 with each omission annotated by the step that adds it, so the file records what is *deferred* rather than pretending to be finished. Added `tools/validate_policies.py` as the executable form of the S2.5 requirement ("refuse to start on failure") — it exits non-zero, so it doubles as a CI gate. One find while writing the tests: the schema also rejects an **unnamespaced** `Action::"invoke"`, so the namespace cannot be half-adopted by accident. Left the `flags: Set<String>` hole open deliberately and pinned it with a test that must break at S2.2. |
+| 2026-09-05 | env | The Windows checkout could not run the suite at all: `.venv` was the upstream environment (LangChain 1.4, Python 3.14) and LangChain 0.3.x cannot import under 3.14 — `Chain.dict()` shadows `dict` when PEP 649 evaluates `Optional[dict[str, Any]]`, so `langchain.chains.base` fails at class creation. Rebuilt `.venv` on 3.12.14 from `requirements-dev.txt`. One genuine portability bug surfaced: `test_rule_writes_are_confined_to_the_library` compared a native path against a `/`-separated literal. Fixed; suite green on Windows. |
+| 2026-09-05 | S1.6 | Two policies, and a finding that came out of writing the `@source` annotation honestly. The walking skeleton's rule (stop on `destuctive_os_inst`) is **not** in the shipped corpus: the nearest match, `pythonrepl.ar#index8`, also requires `involve_system_file` and only asks the user. That is the norm — **24 of the 26 rules in `pythonrepl.ar` enforce `user_inspection`**, and of the two that `stop`, one is `is_malware`, whose predicate is never registered (S0.12). The shipped PythonREPL corpus has exactly **one working hard stop**. Second: Cedar validates policy logic but treats annotations as opaque strings, so `@advice("stopp")` type-checks and then crashes the resolver at decision time — the same silent-failure shape as AgentSpec's. Added an annotation lint to `tools/validate_policies.py`; the lattice moves to `agentguard/advice.py` at S2.4. |
+| 2026-09-05 | S1.7 | Cedar decides, end to end. Two findings, both about failing **closed**. (1) When Cedar cannot evaluate a request it returns `Decision.NoDecision` and puts the cause in `diagnostics.errors` — it does not raise. A malformed entity store does exactly this. Any engine that reads "not Deny" as permission turns an internal fault into a **silent allow**, which is the failure mode this project exists to remove; `decide()` treats NoDecision-or-errors as `stop`. (2) The tool name reaches the request from the model's own output, so it is attacker-influenced whenever the task prompt is. Interpolated raw into `Tool::"..."` a crafted name closes the uid early — verified: it yields `failed to parse schema from request`, so unescaped it is a denial of service rather than a bypass, but only because of finding (1). Escaped at the boundary anyway; a parser is not an access control. Also worth recording: under Cedar the policy set comes from `policies/`, not from the `rules=` argument, so `test_no_rules_means_no_interference` legitimately changes meaning — S2.7 has to decide what "no rules" means for an engine whose policies are ambient. |
+| 2026-09-05 | S1.8 | Panel wired, and it immediately earned its keep: **example 3 disagrees**. "No rules loaded" is AgentSpec's control case — an empty rule list means nothing can fire — but AgentGuard's policy set is *ambient*, loaded from `policies/` rather than passed in, so the same call is denied. Neither engine is wrong; the two have different notions of where policy lives, and S2.7 has to pick one deliberately. **Example 7** is the other one worth looking at: a rule that does not parse takes the AgentSpec run down mid-flight (verdict ERROR) while Cedar still returns a decision — RQ6 visible in the UI rather than argued in prose. Panel is a decision, not a second agent run; the engine toggle and the verdict diff stay with S2.10. |
+| 2026-09-06 | S2.1 | Registry landed, and the metadata is derived rather than declared — `reads` from the AST, `domain` from the defining module, `cost` from `reads` — so S2.2 can generate the schema without a hand-maintained table in the middle of it. Three findings. (1) **The plan's third domain is empty.** `rules/manual/toolemu.py` is a 0-byte file and `terminal.py` keeps its four predicates in a private `table` dict `table.py` never merges, so the registry is 25 code + 11 embodied and *zero* toolemu. `src/rules/__pycache__/` still holds **38 orphaned `.pyc` files** with no `.py` source — `tool_emu_predicate_table` and 30+ per-toolkit predicate modules — so that layer was deleted upstream and survives only as bytecode. S3.4 and S6.3 both assume it exists. (2) **Domain is not decoration:** run an embodied sensor on a code agent's trace and it *raises* rather than returning False — 5 of 11 do — and the exception class is not even stable (`is_unsafe_fillliquid` gives AttributeError on an input with spaces, IndexError without). So "catch the known exception" is not available to S2.3; only not running the sensor is. Every raising sensor is one whose `reads` include `intermediate_steps`, so the metadata is sufficient to avoid them — that is a test. (3) **35 of 36 predicates never look at the user's task.** Only `predicate11` reads `user_input`, and its name is a placeholder. A guard that cannot relate the action to the request cannot distinguish the deletion that was asked for from the one that was not — relevant to RQ2b, since it bounds how few false positives the baseline can possibly achieve. |
+| 2026-09-06 | S2.2 | Schema is generated from the registry, and `make validate` fails when the file on disk no longer matches it — a hand-edited schema type-checks perfectly and silently drops a flag, which is a policy that can never fire, so the staleness check is the point rather than tidiness. **The plan's record-of-Bools has a sub-variant it did not name, and only one of the two is honest.** With *required* attributes Cedar answers `NoDecision` unless the request carries every declared flag — so shipping them would mean sending `false` for the 35 sensors that never ran, asserting "the dangerous thing is not happening" about checks nobody performed. That is the exact fail-open shape this project exists to remove. With *optional* attributes the request carries only what was evaluated, and Cedar **refuses to validate an unguarded access** (`unable to guarantee safety of access`) — so a policy is forced to write `context.flags has X && context.flags.X` and the three states stay distinct: fired / ran-and-said-no / never-ran. The verbosity is the honesty, and it is mechanical, so S3.3's compiler emits it. `run_sensors` now returns a map rather than a list of names for the same reason. S1.5's deliberately-failing test has flipped: a misspelled flag is now rejected by name at load. Bench shows `destuctive_os_inst = false` as a distinct muted pill, so "ran and said no" is visible rather than inferred. |
+| 2026-09-06 | S2.3 | Materialisation extracted, and selecting sensors **by domain** rather than by name turned out to be the whole step. Running all 25 code sensors instead of one immediately produced **three corpus defects**, now written up in `docs/findings.md`. **D-1: `is_buggy_ip_validation_code` is a constant `True` in practice** — it asks whether the *code text* starts with a literal `^` and ends with `$`, which almost nothing does, so it short-circuits to True on every input we could construct including the empty string and a *correct* IP-validation regex. Any rule using it fires always; at `user_inspection` (24 of 26 rules) that prompts the user on every call, which is how a guardrail gets switched off. **D-2: `write_to_io` matches `print\(.*?\)`**, so `print(6 * 7)` — the bench's own benign example — is "writing to I/O". Two of 25 sensors fire on trivial arithmetic; one fires on the empty string. **D-3: the `.ar` corpus and the executable `checks{}` table disagree at 8 of 16 indices**, and six names on the `.ar` side are not registered at all, so those rules cannot execute — the same class as S0.12's `is_malware` but systematic, and a hard bound on what S3.4 can compile faithfully. **D-4 corrects an S2.1 claim of mine**: I said 35 of 36 predicates ignore the user's task; it is 36 of 36 — `predicate11` only *forwards* `user_input` to helpers that ignore it, so "references the name" overstated it. Also measured: sensor cost is dominated by input size, not sensor count (25 sensors on 2 KB = 2.98 ms vs a 0.058 ms Cedar decision, so detection is ~51× the decision) — the concrete form of RQ5's headline. |
+| 2026-09-06 | S2.4 | Lattice, join and substitution rule now have one home, and the duplicate in `tools/` is gone. The join is a meet on a total order, so it is idempotent, commutative and associative — that is what makes the outcome independent of the order Cedar lists determining policies in, and Cedar obliged again during testing by returning `['policy1','policy0']` for a two-forbid decision while the resolution stayed `user_inspection`. **D-5: substitution is unreachable in the baseline**, in four compounding ways — the grammar parses `invoke_action(t,{...})`, `enterEnforcement` then looks up the whole *source text* in `ENFORCEMENT_TO_CLASS` and raises KeyError mid-run, `InvokeAction` is never registered so it could not be selected anyway, and it is a no-op returning the original action even if it were. No corpus rule uses it, which is presumably why nobody noticed. Consequence for the write-up: substitution is a capability we add, not a baseline we beat. Kept it off the lattice for the reason the plan asked us to state: a rewrite *invokes a tool*, so it can be more dangerous than what it replaced and has no honest rank between `skip` and `stop`. Falling back to the join of the *other* policies would discard the rewrite the author asked for and make the outcome depend on which others happened to fire — the composition sensitivity the lattice exists to remove — so a non-unique substitution resolves to `stop`. |
+| 2026-09-06 | S2.5 | Engine split out; `executor.py` is now only the LangChain binding. **RQ6 answered, and one of my own earlier claims corrected.** S2.2 said a misspelled flag is now rejected at load. It is not — `has` is well typed for *any* attribute name, so `context.flags has destuctive_os_inzt && context.flags.destuctive_os_inzt` validates cleanly and the policy silently never fires. And the guarded form is the **only** one Cedar accepts for an optional attribute, so **the idiom S2.2 mandates is exactly the one that defeats the check S2.2 added**: two individually-correct features composing into a hole. What closes it is the engine's **coverage check** — every flag a policy reads must be one the configured domain's sensors will materialise — which Cedar cannot do, because the schema legitimately declares all 36 sensors and only the engine knows which subset it runs. That check also catches the other direction (an embodied flag in a code-domain engine) and is the direct analogue of S0.12's `is_malware`. On the acceptance criterion: the S0.12 xfails **cannot** flip without patching `src/rule.py`, which would make every later comparison a comparison against a repaired baseline; kept them red as the record and answered RQ6 in `tests/test_fail_closed.py`, four modes mapped one-to-one. Also noted for S2.7: AgentGuard refuses to start with no policies at all (an engine with none allows everything), where AgentSpec starts happily with an empty rule list — the same where-does-policy-live disagreement as bench example 3. |
+| 2026-09-06 | S2.6 | Mapping done by reuse — the five lattice outcomes go through AgentSpec's own unmodified classes — but writing the tests turned up **D-6: `llm_self_reflect` crashes the run**. `LLMSelfReflect.apply` returns the raw LangChain object `agent.plan()` gave it, not an AgentSpec `Action`; the executor feeds that straight back into its own loop and dies on `action.is_finish()`. Verified end to end through the bench: `AttributeError: 'AgentFinish' object has no attribute 'is_finish'`. So with D-5, **two of the six enforcement forms the grammar accepts do not work** — leaving `stop`, `skip`, `user_inspection`, `none`. We wrap the return value rather than copy the bug, which is the only reason the outcome exists on our side; the write-up must call that "made to work", not "more expressive". **D-7** counts the enforcement side of the corpus: of 61 `enforce` clauses, 40 use one of the two working outcomes; 18 are apollo `config` assignments whose *checks* already fail with `unsupported type` before enforcement is reached (a family the interpreter never supported, not a regression), 1 is `llm_self_examine` which is not a grammar token at all, and 1 is a parameterised `user_inspection("...")` which does not parse. Design point worth keeping: a substitution is **re-guarded**, because it replaces a call the policy set just judged with one the policy author wrote — unguarded, `@substitute_tool` would be a documented bypass. Bounded at 3 redirects so two policies pointing at each other cannot loop. |
+| 2026-09-06 | S2.7 | Parity, with the criterion read honestly rather than literally. `make test-cedar`: **417 passed, 15 skipped, 0 failed** — every skip carries its reason and `-rs` prints them. All 15 have an AgentSpec *rule* as their subject: most are blocked on S3.3 (until a rule can become a policy the Cedar engine has nothing to decide on), and **two can never pass by design** — `test_first_matching_rule_decides` and `test_order_dependence_is_real` assert that swapping two rules flips the verdict, which is exactly the property the lattice removes. A literal "every test passes under both" would have required either deleting those or making Cedar order-dependent; both are worse than a documented skip. **Settled the where-does-policy-live question** that surfaced at S1.8, S2.5 and S1.7: policy is **ambient**, read from `$AGENTGUARD_POLICIES`, because a guard whose rule set arrives as a constructor argument is opt-in per construction site — the code being guarded can construct itself unguarded. That is a design claim, not a measurement, and it is labelled as one. It also has a cost: "run with these rules" has no direct equivalent, so `test_no_rules_means_no_interference` needed a translation (baseline-permit-only policy set) rather than a comparison — and now passes on **both** engines, which is the question in executable form. |
+| 2026-09-06 | S2.8 | M2 measured rather than argued. The same three guards — suppress / halt / pass-through — written once as AgentSpec rules and once as Cedar policies, under all six orderings: **AgentSpec produces 2 distinct verdicts, AgentGuard produces 1** (and 1 across 100 random shuffles). Nothing changes but the order they are listed in, so a reviewer reading an AgentSpec rule file cannot tell what the guard will do without also knowing the order — and neither can a tool, which is what blocks the Sprint 5 analysis for the baseline. Two things make it a real result rather than a tautology: every shuffle goes through `engine.load()` on disk, so Cedar reassigns the synthetic ids **by position** each time and a resolution keyed on them would break; and Cedar still does not return determining policies in source order, re-checked here, so "take the first" was never a defensible design. Also pinned sensor-order independence, which §C.4 claims alongside policy order — it holds now and would stop holding the moment a sensor gained a side effect another could observe. |
+| 2026-09-06 | S2.9 | Cedar profiled, and **two expectations the plan carried since S0.11 did not survive it**. The architectural claim did: `rule_parse` is exactly **0.0%** of AgentGuard's guard against **79.2%** of AgentSpec's. But (1) *"the policy engine is free; detection is the cost"* is **not supported at these input sizes** — detection 0.5104 ms against decision 0.5067 ms, within 1%. The slogan was extrapolated from S1.4's 0.058 ms spike, which used a 1-flag request with no schema and no entity store; on the real request the decision is 0.2341 ms, of which **passing the `Schema` on every call is +0.087 ms — over a third**, the entity store +0.029, and the 24 extra flags +0.039. So the decision cost is dominated by **marshalling across the Python/Rust boundary, not by evaluating policies**, which is both more useful and names an optimisation (hoist the parsed schema). And (2) **AgentGuard's guard total is 2.3× AgentSpec's** — reported plainly, because the cause is our S2.3 choice to materialise the whole domain (25 sensors per step vs the 1–2 AgentSpec names), not a cost Cedar imposes; S2.3 already measured the lever at 25→1. Methodological fix worth keeping: a profiling run builds executors of both kinds, so steps are now tagged with `engine` and the report filters — the first measurement blended them and showed a nonzero `rule_parse` under Cedar. Also pinned the report's output encoding: on Windows the `·` separator was being written as cp1252 and the frozen `.md` was not valid UTF-8. |
+| 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |

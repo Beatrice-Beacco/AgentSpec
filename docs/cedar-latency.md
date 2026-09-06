@@ -1,17 +1,17 @@
 # Latency report
 
-Source: `expres/latency/baseline.jsonl`  ·  65 steps, 36 with at least one rule evaluated
+Source: `expres/latency/cedar.jsonl`  ·  36 steps, 23 with at least one rule evaluated
 
 | phase | mean ms | median ms | p95 ms | share of guard |
 |---|---:|---:|---:|---:|
-| llm_plan | 0.4344 | 0.3879 | 0.6436 |  |
-| rule_parse | 0.3507 | 0.3122 | 0.5144 | 79.2% |
-| predicate_eval | 0.0722 | 0.0450 | 0.2106 | 16.3% |
-| cedar_decide | 0.0000 | 0.0000 | 0.0000 | 0.0% |
-| enforcement | 0.0198 | 0.0180 | 0.0432 | 4.5% |
-| **guard total** | **0.4428** | 0.3833 | 0.6522 | 100% |
+| llm_plan | 0.4795 | 0.4045 | 0.8877 |  |
+| rule_parse | 0.0000 | 0.0000 | 0.0000 | 0.0% |
+| predicate_eval | 0.5104 | 0.2038 | 0.8346 | 49.3% |
+| cedar_decide | 0.5067 | 0.4245 | 1.2419 | 48.9% |
+| enforcement | 0.0191 | 0.0000 | 0.0697 | 1.8% |
+| **guard total** | **1.0362** | 0.6462 | 2.1543 | 100% |
 
-Mean step: 0.9900 ms  ·  guard is 44.7% of it.
+Mean step: 1.6923 ms  ·  guard is 61.2% of it.
 
 > The LLM here is a scripted FakeListLLM, so `llm_plan` is ~0. Against a real model that phase dominates and the guard share collapses -- which is the point: read the guard phases against each other, not against this total.
 

@@ -15,6 +15,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
+# The repo root too, so `import agentguard` works: pytest puts tests/ on the
+# path, not the directory above it.
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from langchain.tools import Tool                       # noqa: E402
 from langchain_core.language_models.fake import FakeListLLM  # noqa: E402
@@ -31,6 +35,71 @@ TOOL_NAME = "python_repl"
 # action, observation) so you can watch enforcement happen. Needs `pytest -s`
 # to reach the terminal -- pytest captures stdout otherwise. See tests/README.md.
 VERBOSE = os.environ.get("AGENTSPEC_VERBOSE") == "1"
+
+
+# --------------------------------------------------------- engine selection
+
+import agentguard                                              # noqa: E402
+
+#: Tests whose *subject* is an AgentSpec rule: they pass one in and assert the
+#: enforcement it names, or assert a property of the rule-list evaluation order.
+#: They cannot run under the Cedar engine, which takes no rules -- until S3.3
+#: compiles rules into policies there is nothing for it to decide on. Two of
+#: them assert order dependence, which Cedar deliberately does not have, so they
+#: will never be engine-agnostic.
+#:
+#: Marked rather than deleted: they are the record of the baseline's semantics,
+#: and `make test-cedar` prints every skip with its reason.
+LEGACY_ONLY = "legacy_only"
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        f"{LEGACY_ONLY}(reason): the subject is an AgentSpec rule, so the test "
+        "cannot run under AGENTGUARD=cedar")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip legacy-only tests when the suite is forced onto the Cedar engine."""
+    if not agentguard.enabled():
+        return
+    for item in items:
+        marker = item.get_closest_marker(LEGACY_ONLY)
+        if marker is None:
+            continue
+        reason = (marker.args[0] if marker.args
+                  else "the subject is an AgentSpec rule")
+        item.add_marker(pytest.mark.skip(
+            reason=f"legacy engine only: {reason}"))
+
+
+@pytest.fixture
+def baseline_policy_dir(tmp_path, monkeypatch):
+    """A valid policy set that guards nothing -- Cedar's "no rules loaded".
+
+    The Cedar engine takes no `rules=` argument, so "run with an empty rule
+    list" has no direct translation. The equivalent deployment is a policy set
+    containing only the baseline permit, and this builds one. It also refuses to
+    exist as an *empty* directory, because an engine with no policies at all
+    allows everything (agentguard/engine.py).
+    """
+    (tmp_path / "schema.cedarschema").write_text(
+        _generated_schema(), encoding="utf-8")
+    (tmp_path / "baseline.cedar").write_text(
+        '@id("baseline_allow_tools")\n'
+        'permit (principal, action == AgentGuard::Action::"invoke", resource);\n',
+        encoding="utf-8")
+    monkeypatch.setenv(agentguard.POLICY_DIR_VAR, str(tmp_path))
+    from agentguard import engine                              # noqa: PLC0415
+    engine.load.cache_clear()
+    yield str(tmp_path)
+    engine.load.cache_clear()
+
+
+def _generated_schema():
+    from agentguard import schema                              # noqa: PLC0415
+    return schema.generate()
 
 
 @pytest.fixture(autouse=True)

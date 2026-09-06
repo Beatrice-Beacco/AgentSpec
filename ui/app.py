@@ -19,6 +19,8 @@ import engine                                          # noqa: E402
 from examples import EXAMPLES                          # noqa: E402
 from engine import REPO_ROOT, predicate_table          # noqa: E402
 
+import agentguard                                      # noqa: E402
+
 app = Flask(__name__)
 
 # Rule files may only be read or written under these roots. The bench is
@@ -78,7 +80,11 @@ def state():
         "library": _library(),
         "examples": EXAMPLES,
         "predicates": sorted(predicate_table),
-        "engine": "legacy",          # flips to "cedar" after plan.md S1.7
+        # The *default* engine. Since S2.10 the bench picks per request, so
+        # this only seeds the toggle -- $AGENTGUARD still decides what a run
+        # does if the caller does not say.
+        "engine": "cedar" if agentguard.enabled() else "legacy",
+        "engines": ["legacy", "cedar", "both"],
     })
 
 
@@ -104,21 +110,31 @@ def probe():
 @app.post("/api/run")
 def run():
     body = request.json
+    args = (
+        body.get("rule_text", ""),
+        body.get("user_input", ""),
+        body.get("tool_name", "python_repl"),
+        body.get("tool_input", ""),
+        body.get("intermediate_steps") or [],
+    )
+    approve = bool(body.get("approve", True))
+    # The engine is chosen per request rather than from $AGENTGUARD, so compare
+    # mode can build one of each without mutating the environment (S2.10).
+    which = body.get("engine") or ("cedar" if agentguard.enabled() else "legacy")
     try:
-        return jsonify(engine.run(
-            body.get("rule_text", ""),
-            body.get("user_input", ""),
-            body.get("tool_name", "python_repl"),
-            body.get("tool_input", ""),
-            body.get("intermediate_steps") or [],
-            approve=bool(body.get("approve", True)),
-        ))
+        if which == "both":
+            return jsonify(engine.compare(*args, approve=approve))
+        return jsonify(engine.run(*args, approve=approve, engine=which))
     except Exception as exc:                            # noqa: BLE001
         import traceback
         return jsonify({"verdict": "ERROR", "error": traceback.format_exc(),
                         "output": str(exc), "tool_calls": [], "steps": [],
                         "trace": "", "rules": [], "explain": [],
-                        "cedar": {"status": "not_implemented"}}), 200
+                        "cedar": engine.cedar_decision(
+                            body.get("user_input", ""),
+                            body.get("tool_name", "python_repl"),
+                            body.get("tool_input", ""),
+                            body.get("intermediate_steps") or [])}), 200
 
 
 @app.get("/api/rule")

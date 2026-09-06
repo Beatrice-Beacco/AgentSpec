@@ -24,6 +24,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
+if REPO_ROOT not in sys.path:                  # so `import agentguard` resolves
+    sys.path.insert(0, REPO_ROOT)
 
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
@@ -32,7 +34,8 @@ from langchain_core.language_models.fake import FakeListLLM
 
 from spec_lang.AgentSpecLexer import AgentSpecLexer
 from spec_lang.AgentSpecParser import AgentSpecParser
-from controlled_agent_excector import initialize_controlled_agent
+from controlled_agent_excector import (ControlledAgentExecutor,
+                                       initialize_controlled_agent)
 from rule import Rule
 from rules.manual.table import predicate_table
 
@@ -202,6 +205,98 @@ def explain(rules, user_input, tool_name, tool_input, intermediate_steps):
     return report
 
 
+# --------------------------------------------------------------------- cedar
+
+#: Cedar's advice, expressed in the verdict vocabulary the bench already uses,
+#: so the two panels can be read against each other without a translation step.
+#: `user_inspection` has no fixed answer -- it depends on the approve toggle --
+#: so it stays named rather than being resolved to one of the others.
+ADVICE_VERDICT = {
+    "allow": "ALLOWED",
+    "skip": "SKIPPED",
+    "stop": "STOPPED",
+    "user_inspection": "ASKS THE USER",
+    "llm_self_reflect": "RE-PLANS",
+}
+
+
+def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
+    """What the Cedar engine decides about the same call the legacy engine ran.
+
+    Deliberately a decision and not a second agent run: the point of the panel
+    is to see Allow/Deny and the policies behind it next to the legacy verdict,
+    and running the agent twice would double the moving parts for no extra
+    information. The engine toggle and the verdict diff are S2.10.
+
+    Never raises. The bench exists to look at failures, so a Cedar failure has
+    to be visible in the panel rather than take the whole run down.
+    """
+    try:
+        from agentguard import executor as ag              # noqa: PLC0415
+        from agentguard import request as ag_request        # noqa: PLC0415
+        from agentguard import sensors as sensor_registry   # noqa: PLC0415
+    except ImportError as exc:                             # pragma: no cover
+        return {"status": "unavailable",
+                "note": f"cedarpy is not installed ({exc})."}
+
+    try:
+        bundle = ag.load_bundle()
+    except Exception as exc:                               # noqa: BLE001
+        # A policy set that does not validate stops the engine loading at all.
+        # That is the intended behaviour (plan.md S2.5), so report it as a
+        # finding rather than an outage.
+        return {"status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+    from langchain_core.agents import AgentAction          # noqa: PLC0415
+    from agent import Action                               # noqa: PLC0415
+    from state import RuleState                            # noqa: PLC0415
+
+    action = Action.from_langchain(
+        AgentAction(tool=tool_name, tool_input=tool_input, log="")
+    )
+    state = RuleState(action=action, agent=None,
+                      intermediate_steps=intermediate_steps or [],
+                      user_input=user_input)
+
+    try:
+        verdict = ag.decide(bundle, state)
+    except Exception as exc:                               # noqa: BLE001
+        return {"status": "error", "note": f"{type(exc).__name__}: {exc}"}
+
+    material = verdict.materialisation
+
+    return {
+        "status": "ok",
+        "decision": verdict.decision,
+        "advice": verdict.advice,
+        "verdict": ADVICE_VERDICT.get(verdict.advice, verdict.advice.upper()),
+        # Under the record schema (S2.2) "fired" and "ran" are different
+        # facts, and the panel shows both: a sensor that ran and said no is
+        # evidence, a sensor that never ran is a gap.
+        "flags": material.fired,
+        "evaluated": sorted(material.evaluated),
+        "domain": material.domain,
+        "sensors": sorted(s.name for s in ag_request.select(material.domain)),
+        "variant": bundle.flags_variant,
+        # 36 are registered (S2.1); this engine runs the ones its domain can
+        # safely evaluate (S2.3). Showing both keeps the gap visible.
+        "registered": len(sensor_registry.SENSORS),
+        "errors": list(verdict.errors),
+        # Set when the outcome was not simply the join -- a downgraded
+        # substitution, an unknown @advice value (S2.4).
+        "resolution_note": verdict.resolution.note if verdict.resolution else "",
+        "reasons": [
+            {"policy": pid,
+             "id": bundle.name_for(pid),
+             "advice": bundle.advice_for(pid) if verdict.decision == "Deny" else None,
+             "source": bundle.source_for(pid)}
+            for pid in verdict.policy_ids
+        ],
+        "request": material.request,
+        "entities": material.entities,
+    }
+
+
 # ---------------------------------------------------------------------- run
 
 def react_script(tool_name, tool_input, final="done"):
@@ -213,9 +308,23 @@ def react_script(tool_name, tool_input, final="done"):
     ]
 
 
+#: Engine name -> the executor class the bench should build (plan.md S2.10).
+#: Resolved lazily because the Cedar half needs cedarpy, and the bench should
+#: still start without it.
+def executor_class(engine):
+    if engine != "cedar":
+        return ControlledAgentExecutor
+    from agentguard.executor import CedarControlledAgentExecutor  # noqa: PLC0415
+    return CedarControlledAgentExecutor
+
+
 def run(rule_text, user_input, tool_name, tool_input,
-        intermediate_steps=None, approve=True):
-    """Run the real ControlledAgentExecutor against one scripted action.
+        intermediate_steps=None, approve=True, engine="legacy"):
+    """Run one scripted action through one guard engine.
+
+    `engine` picks the executor directly rather than through $AGENTGUARD, so
+    compare mode can build one of each in the same process -- mutating the
+    environment around each build would be racy under a threaded server.
 
     `approve` answers any `user_inspection` prompt, which would otherwise
     block the server on stdin forever. Toggling it is how you exercise both
@@ -239,6 +348,7 @@ def run(rule_text, user_input, tool_name, tool_input,
         rules=parsed,
         verbose=True,
         max_iterations=3,
+        executor_cls=executor_class(engine),
     )
 
     trace = io.StringIO()
@@ -271,6 +381,7 @@ def run(rule_text, user_input, tool_name, tool_input,
         verdict = "NO ACTION"
 
     return {
+        "engine": engine,
         "verdict": verdict,
         "output": output,
         "tool_calls": tool_calls,
@@ -279,10 +390,8 @@ def run(rule_text, user_input, tool_name, tool_input,
         "error": error,
         "rules": [{"id": e["id"], "errors": e["errors"]} for e in rules],
         "explain": explain(rules, user_input, tool_name, tool_input, intermediate_steps),
-        # Cedar lands in Sprint 1/2 (plan.md S1.7, S2.5). The shape is fixed now
-        # so the UI does not need restructuring when it does.
-        "cedar": {"status": "not_implemented",
-                  "note": "Cedar decisions appear here after plan.md S1.7."},
+        # The same call, decided by Cedar against policies/ (plan.md S1.8).
+        "cedar": cedar_decision(user_input, tool_name, tool_input, intermediate_steps),
     }
 
 
@@ -291,3 +400,55 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 def _clean(text):
     return ANSI.sub("", text).strip()
+
+
+# ------------------------------------------------------------------ compare
+
+#: What compare mode puts side by side. Each entry reads one run result.
+COMPARED = (
+    ("verdict", lambda r: r["verdict"]),
+    ("tool reached", lambda r: ", ".join(r["tool_calls"]) or "—"),
+    ("final output", lambda r: (r["output"] or "—")[:120]),
+    ("steps", lambda r: str(len(r["steps"]))),
+    ("what decided", lambda r: _decider(r)),
+)
+
+
+def _decider(result):
+    """Which rule or policy produced the outcome, in one line."""
+    if result["engine"] == "cedar":
+        cedar = result.get("cedar") or {}
+        names = [r["id"] for r in cedar.get("reasons", [])]
+        return ", ".join(f"@{n}" for n in names) or "—"
+    fired = [r["id"] for r in result.get("explain", []) if r["would_fire"]]
+    return ", ".join(f"@{n}" for n in fired) or "—"
+
+
+def compare(rule_text, user_input, tool_name, tool_input,
+            intermediate_steps=None, approve=True):
+    """Run one input through both engines and diff the outcomes (plan.md S2.10).
+
+    This is how an RQ1/RQ3 disagreement gets found by hand: the two engines see
+    the same call, and any row that differs is either a gap in the policy set or
+    a real semantic difference worth writing down. Three of the findings in
+    docs/findings.md started as a row in this table.
+    """
+    runs = {name: run(rule_text, user_input, tool_name, tool_input,
+                      intermediate_steps, approve, engine=name)
+            for name in ("legacy", "cedar")}
+
+    rows = []
+    for label, read in COMPARED:
+        try:
+            left, right = read(runs["legacy"]), read(runs["cedar"])
+        except Exception as exc:                        # noqa: BLE001
+            left = right = f"error: {exc}"
+        rows.append({"aspect": label, "legacy": left, "cedar": right,
+                     "same": left == right})
+
+    return {
+        "mode": "compare",
+        "runs": runs,
+        "rows": rows,
+        "agree": runs["legacy"]["verdict"] == runs["cedar"]["verdict"],
+    }

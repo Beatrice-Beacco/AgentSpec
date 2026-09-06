@@ -67,6 +67,11 @@
 
       <div class="row" style="margin-top:12px">
         <button id="run" class="primary">Run ▸</button>
+        <select id="engineSelect" title="which guard engine decides this run">
+          <option value="legacy">engine: legacy</option>
+          <option value="cedar">engine: cedar</option>
+          <option value="both">compare both</option>
+        </select>
         <button id="probe">Probe all predicates</button>
         <span id="busy" class="muted small"></span>
       </div>
@@ -74,6 +79,12 @@
   </div>
 
   <!-- ------------------------------------------------------- results -->
+  <!-- ------------------------------------------------------- compare -->
+  <section class="panel" id="compare" hidden>
+    <h2>Compare &mdash; one input, both engines</h2>
+    <div id="compareBody"></div>
+  </section>
+
   <section class="panel" id="results" hidden>
     <h2>Result</h2>
     <div class="row" style="gap:14px">
