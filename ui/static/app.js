@@ -147,10 +147,10 @@ function renderCedar(c, legacyVerdict) {
   const deny = c.decision === 'Deny';
   const agrees = c.verdict === legacyVerdict;
 
+  const active = `${c.sensors.length} active of ${c.registered} registered`;
   const flags = c.flags.length
     ? c.flags.map(f => `<span class="pill bad" style="margin:2px 3px 2px 0">${esc(f)}</span>`).join('')
-    : `<span class="muted small">none of ${c.sensors.length} sensor` +
-      `${c.sensors.length === 1 ? '' : 's'} fired</span>`;
+    : `<span class="muted small">nothing fired</span>`;
 
   const reasons = c.reasons.length
     ? '<table style="margin-top:8px"><tr><th>policy</th><th>@advice</th><th>@source</th></tr>' +
@@ -173,7 +173,7 @@ function renderCedar(c, legacyVerdict) {
     </div>
     ${errors}
     <p class="small" style="margin:10px 0 4px"><b>context.flags</b>
-      <span class="muted">— what the Python sensors materialised</span></p>
+      <span class="muted">— what the Python sensors materialised (${esc(active)})</span></p>
     <div>${flags}</div>
     <p class="small" style="margin:12px 0 0"><b>diagnostics.reasons</b>
       <span class="muted">— the policies that determined it</span></p>

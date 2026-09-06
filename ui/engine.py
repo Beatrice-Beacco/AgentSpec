@@ -232,6 +232,7 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
     """
     try:
         from agentguard import executor as ag              # noqa: PLC0415
+        from agentguard import sensors as sensor_registry   # noqa: PLC0415
     except ImportError as exc:                             # pragma: no cover
         return {"status": "unavailable",
                 "note": f"cedarpy is not installed ({exc})."}
@@ -267,7 +268,10 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
         "advice": verdict.advice,
         "verdict": ADVICE_VERDICT.get(verdict.advice, verdict.advice.upper()),
         "flags": list(flags),
-        "sensors": sorted(ag.SENSOR_NAMES),
+        "sensors": sorted(ag.ACTIVE_SENSORS),
+        # 36 are registered (S2.1); this engine runs the ones a policy
+        # actually reads. Showing both keeps the S2.3 gap visible.
+        "registered": len(sensor_registry.SENSORS),
         "errors": list(verdict.errors),
         "reasons": [
             {"policy": pid,

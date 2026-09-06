@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 1 complete. Next: Sprint 2, Step S2.1 (sensor registry).
+**Current position:** Sprint 2, Step S2.2 (generate the schema from the registry).
 
 ---
 
@@ -165,10 +165,18 @@ verdicts on one screen. Screenshot the bench on example 1 (agrees) and example 3
 
 Goal: a real, tested `agentguard/` package. No hard-coding left.
 
-- [ ] **S2.1** `agentguard/sensors.py` — a registry wrapping all 36 predicates from
+- [x] **S2.1** `agentguard/sensors.py` — a registry wrapping all 36 predicates from
       `rules.manual.table.predicate_table`, each with metadata: name, domain
-      (code/embodied/toolemu), cost hint, which flags it can set.
-      *Accept:* `len(SENSORS) == 36`; `pytest tests/test_sensors.py` green.
+      (code/embodied/toolemu), cost hint, which flags it can set. ✅ 2026-09-06
+      Metadata is **derived** from the predicates (AST for `reads`, defining module
+      for `domain`, `reads` for `cost`), not hand-listed — so adding a predicate
+      needs no edit here, which is what S2.2's "no hand-editing" depends on.
+      `make sensors` prints the table. Cost scale is `input < history < model`.
+      *Accept:* ✅ `len(SENSORS) == 36`; `tests/test_sensors.py` — 22 tests, each
+      re-deriving independently rather than restating the module's own tables.
+      ⚠️ **The third domain does not exist.** 25 code + 11 embodied; `toolemu.py` is
+      an empty file and `terminal.py`'s 4 predicates are never merged into
+      `predicate_table`. Carry into S3.4 and S6.3, which both assume otherwise.
 - [ ] **S2.2** `agentguard/schema.py` — generate `schema.cedarschema` **from** the sensor
       registry, so flags are a validated record-of-bools rather than free strings.
       Keep the `Set<String>` variant behind a flag so we can compare both (thesis §C.2).
@@ -397,3 +405,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.6 | Two policies, and a finding that came out of writing the `@source` annotation honestly. The walking skeleton's rule (stop on `destuctive_os_inst`) is **not** in the shipped corpus: the nearest match, `pythonrepl.ar#index8`, also requires `involve_system_file` and only asks the user. That is the norm — **24 of the 26 rules in `pythonrepl.ar` enforce `user_inspection`**, and of the two that `stop`, one is `is_malware`, whose predicate is never registered (S0.12). The shipped PythonREPL corpus has exactly **one working hard stop**. Second: Cedar validates policy logic but treats annotations as opaque strings, so `@advice("stopp")` type-checks and then crashes the resolver at decision time — the same silent-failure shape as AgentSpec's. Added an annotation lint to `tools/validate_policies.py`; the lattice moves to `agentguard/advice.py` at S2.4. |
 | 2026-09-05 | S1.7 | Cedar decides, end to end. Two findings, both about failing **closed**. (1) When Cedar cannot evaluate a request it returns `Decision.NoDecision` and puts the cause in `diagnostics.errors` — it does not raise. A malformed entity store does exactly this. Any engine that reads "not Deny" as permission turns an internal fault into a **silent allow**, which is the failure mode this project exists to remove; `decide()` treats NoDecision-or-errors as `stop`. (2) The tool name reaches the request from the model's own output, so it is attacker-influenced whenever the task prompt is. Interpolated raw into `Tool::"..."` a crafted name closes the uid early — verified: it yields `failed to parse schema from request`, so unescaped it is a denial of service rather than a bypass, but only because of finding (1). Escaped at the boundary anyway; a parser is not an access control. Also worth recording: under Cedar the policy set comes from `policies/`, not from the `rules=` argument, so `test_no_rules_means_no_interference` legitimately changes meaning — S2.7 has to decide what "no rules" means for an engine whose policies are ambient. |
 | 2026-09-05 | S1.8 | Panel wired, and it immediately earned its keep: **example 3 disagrees**. "No rules loaded" is AgentSpec's control case — an empty rule list means nothing can fire — but AgentGuard's policy set is *ambient*, loaded from `policies/` rather than passed in, so the same call is denied. Neither engine is wrong; the two have different notions of where policy lives, and S2.7 has to pick one deliberately. **Example 7** is the other one worth looking at: a rule that does not parse takes the AgentSpec run down mid-flight (verdict ERROR) while Cedar still returns a decision — RQ6 visible in the UI rather than argued in prose. Panel is a decision, not a second agent run; the engine toggle and the verdict diff stay with S2.10. |
+| 2026-09-06 | S2.1 | Registry landed, and the metadata is derived rather than declared — `reads` from the AST, `domain` from the defining module, `cost` from `reads` — so S2.2 can generate the schema without a hand-maintained table in the middle of it. Three findings. (1) **The plan's third domain is empty.** `rules/manual/toolemu.py` is a 0-byte file and `terminal.py` keeps its four predicates in a private `table` dict `table.py` never merges, so the registry is 25 code + 11 embodied and *zero* toolemu. `src/rules/__pycache__/` still holds **38 orphaned `.pyc` files** with no `.py` source — `tool_emu_predicate_table` and 30+ per-toolkit predicate modules — so that layer was deleted upstream and survives only as bytecode. S3.4 and S6.3 both assume it exists. (2) **Domain is not decoration:** run an embodied sensor on a code agent's trace and it *raises* rather than returning False — 5 of 11 do — and the exception class is not even stable (`is_unsafe_fillliquid` gives AttributeError on an input with spaces, IndexError without). So "catch the known exception" is not available to S2.3; only not running the sensor is. Every raising sensor is one whose `reads` include `intermediate_steps`, so the metadata is sufficient to avoid them — that is a test. (3) **35 of 36 predicates never look at the user's task.** Only `predicate11` reads `user_input`, and its name is a placeholder. A guard that cannot relate the action to the request cannot distinguish the deletion that was asked for from the one that was not — relevant to RQ2b, since it bounds how few false positives the baseline can possibly achieve. |

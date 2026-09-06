@@ -83,6 +83,17 @@ def example(prefix):
     return next(e for e in EXAMPLES if e["name"].startswith(prefix))
 
 
+@pytest.fixture
+def legacy_run(monkeypatch):
+    """Pin the *run* to the legacy engine.
+
+    These two tests compare the two engines, so the run has to be the legacy
+    one whatever the ambient AGENTGUARD says -- otherwise `make test-cedar`
+    turns them into a comparison of Cedar with itself, which always agrees.
+    """
+    monkeypatch.setenv("AGENTGUARD", "legacy")
+
+
 def test_example_1_shows_a_real_cedar_verdict():
     """S1.8's acceptance test."""
     cedar = run_example(example("1."))["cedar"]
@@ -108,7 +119,7 @@ def test_the_panel_never_takes_the_run_down():
         assert run_example(ex)["cedar"]["status"] == "ok", ex["name"]
 
 
-def test_example_3_is_where_the_engines_disagree():
+def test_example_3_is_where_the_engines_disagree(legacy_run):
     """"No rules loaded" does not mean "no policies".
 
     AgentSpec's rule list *is* its policy, so an empty list means nothing can
@@ -121,7 +132,7 @@ def test_example_3_is_where_the_engines_disagree():
     assert result["cedar"]["decision"] == "Deny"
 
 
-def test_example_7_decides_where_the_legacy_engine_crashes():
+def test_example_7_decides_where_the_legacy_engine_crashes(legacy_run):
     """A rule that does not parse takes the AgentSpec run down mid-flight
     (S0.12). Cedar validates at load, so the same call still gets a decision."""
     result = run_example(example("7."))
