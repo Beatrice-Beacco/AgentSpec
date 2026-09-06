@@ -1,5 +1,5 @@
 from langchain.agents.agent import AgentExecutor
-from typing import Optional
+from typing import ClassVar, Optional
 from typing import List, Union
 from agent import Action
 import json
@@ -32,6 +32,14 @@ from typing import Dict
 NextStepOutput = List[Union[AgentFinish, AgentAction, AgentStep]]
 
 class ControlledAgentExecutor(AgentExecutor) : 
+    # Which guard engine produced a profiled step. Instrumentation only -- the
+    # Cedar subclass overrides it, and tools/latency_report.py filters on it so
+    # a run that builds both kinds of executor does not blend their timings
+    # (plan.md S2.9).
+    # ClassVar, not a field: AgentExecutor is a pydantic model, and an
+    # annotated attribute would become part of its schema.
+    GUARD_ENGINE: ClassVar[str] = "legacy"
+
     rules: Optional[List[Rule]]
     user_input: Optional[Dict[str, Any]] = None
    
@@ -104,7 +112,8 @@ class ControlledAgentExecutor(AgentExecutor) :
         """
         try:
             intermediate_steps = self._prepare_intermediate_steps(intermediate_steps) 
-            profiling.begin_step(step=len(intermediate_steps))
+            profiling.begin_step(step=len(intermediate_steps),
+                                 engine=self.GUARD_ENGINE)
             # Call the LLM to see what to do.
             with profiling.phase("llm_plan"):
                 output = self._action_agent.plan(

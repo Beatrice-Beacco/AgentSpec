@@ -308,11 +308,11 @@ def decide(bundle: PolicyBundle, state: RuleState,
                        materialisation=material,
                        raw=describe(bundle, (), ag_advice.DEFAULT, messages))
 
-    # S2.9 adds a `cedar_decide` phase to src/profiling.py. Until then the
-    # decision itself is unmeasured, so guard_ms under-reports for this engine
-    # -- don't quote a Cedar guard total from a profile run before S2.9.
-    result = is_authorized(material.request, bundle.policy_set,
-                           material.entities, bundle.schema)
+    # The decision proper, timed apart from detection: RQ5's whole question is
+    # which of the two costs anything (S2.9).
+    with profiling.phase("cedar_decide"):
+        result = is_authorized(material.request, bundle.policy_set,
+                               material.entities, bundle.schema)
 
     errors = tuple(str(e) for e in result.diagnostics.errors)
     policy_ids = tuple(result.diagnostics.reasons)

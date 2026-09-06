@@ -1,11 +1,18 @@
 """Per-step latency instrumentation, off unless AGENTSPEC_PROFILE=1.
 
-Splits an agent step into the four phases we need for RQ5 (plan.md S0.11, S2.9):
+Splits an agent step into the phases we need for RQ5 (plan.md S0.11, S2.9):
 
     llm_plan        the model deciding what to do
     rule_parse      re-lexing and re-parsing every triggered rule's text
-    predicate_eval  walking the tree, which is where predicates actually run
+    predicate_eval  detection -- AgentSpec walks the tree and runs predicates
+                    there; AgentGuard runs its sensors there
+    cedar_decide    asking Cedar; always 0 for the legacy engine
     enforcement     applying the chosen enforcement strategy
+
+Both engines report into the same phases on purpose, so the two profiles are
+directly comparable: `rule_parse` is 0 for AgentGuard because a PolicySet is
+parsed once at load, and `cedar_decide` is 0 for AgentSpec because there is no
+policy engine to ask. The interesting comparison is detection against decision.
 
 The split matters because the thesis claim is that a policy engine is cheap and
 *detection* is what costs -- a claim you can only make if the two are measured
@@ -24,7 +31,8 @@ ENABLED = os.environ.get("AGENTSPEC_PROFILE") == "1"
 PATH = os.environ.get("AGENTSPEC_PROFILE_PATH",
                       os.path.join("expres", "latency", "baseline.jsonl"))
 
-PHASES = ("llm_plan", "rule_parse", "predicate_eval", "enforcement")
+PHASES = ("llm_plan", "rule_parse", "predicate_eval", "cedar_decide",
+          "enforcement")
 
 # One record per in-flight step. Thread-local because LangChain may run
 # callbacks off-thread; a shared dict would interleave two agents' timings.

@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -72,13 +72,24 @@ audit:  ## parse-check every shipped .ar / .rule file
 profile:  ## time the suite and report per-phase latency
 	@rm -f expres/latency/baseline.jsonl
 	@AGENTSPEC_PROFILE=1 $(PYTEST) -q >/dev/null
-	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl
+	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl --engine legacy
 
 profile-freeze:  ## regenerate docs/baseline-latency.md (thesis evidence)
 	@rm -f expres/latency/baseline.jsonl
 	@AGENTSPEC_PROFILE=1 $(PYTEST) -q >/dev/null
-	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl > docs/baseline-latency.md
+	@$(PY) tools/latency_report.py expres/latency/baseline.jsonl --engine legacy > docs/baseline-latency.md
 	@echo "wrote docs/baseline-latency.md"
+
+profile-cedar:  ## time the Cedar engine (S2.9): sensors vs. decision
+	@rm -f expres/latency/cedar.jsonl
+	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl 	 AGENTGUARD=cedar $(PYTEST) -q >/dev/null
+	@$(PY) tools/latency_report.py expres/latency/cedar.jsonl --engine cedar
+
+profile-cedar-freeze:  ## regenerate docs/cedar-latency.md (thesis evidence)
+	@rm -f expres/latency/cedar.jsonl
+	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl 	 AGENTGUARD=cedar $(PYTEST) -q >/dev/null
+	@$(PY) tools/latency_report.py expres/latency/cedar.jsonl --engine cedar > docs/cedar-latency.md
+	@echo "wrote docs/cedar-latency.md"
 
 audit-freeze:  ## regenerate docs/baseline-audit.md (thesis evidence)
 	@$(PY) tools/audit_rules.py src > docs/baseline-audit.md 2>/dev/null
