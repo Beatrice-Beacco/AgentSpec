@@ -8,8 +8,10 @@ these tests assert three things:
   2. the mistakes it is supposed to catch are caught -- the same classes
      docs/spikes.md S1.3 measured, but against the real file rather than a
      spike's inline string;
-  3. the one class S1.5 could *not* catch -- a misspelled flag -- now is,
-     because S2.2 regenerated `flags` as a record of optional Bools.
+  3. how far S2.2 got with the class S1.5 could *not* catch -- a misspelled
+     flag. The record schema catches it in an *unguarded* access and not in a
+     guarded one, and Cedar only accepts the guarded form, so the schema alone
+     does not close the hole. The engine's coverage check does (S2.5).
 
 The file itself is generated (agentguard/schema.py); tests for the *generator*
 are in tests/test_schema_codegen.py. These test the artifact it produces.
@@ -126,19 +128,37 @@ def test_unnamespaced_action_is_rejected(schema):
 
 # ------------------------------------------- what S2.2 newly makes catchable
 
-def test_a_misspelled_flag_is_now_caught(schema):
-    """The S1.5 hole, closed by S2.2.
+def test_an_unguarded_misspelled_flag_is_caught(schema):
+    """Half of the S1.5 hole, closed by S2.2's record schema.
 
     Under `flags: Set<String>` any string was a valid member, so a typo'd flag
-    type-checked and the policy silently never fired -- the exact failure mode
-    tests/test_fail_open.py documents for AgentSpec. Under the generated record
-    the attribute does not exist and validation names the typo.
+    type-checked. Under the record the attribute does not exist and validation
+    names the typo -- *as long as the access is unguarded*. See the next test
+    for why that qualifier turned out to matter.
     """
     policy = (f'permit (principal, action == {INVOKE}, resource) '
               'when { context.flags.destuctive_os_inzt };')
     result = validate(policy, schema)
     assert not result.validation_passed
     assert "destuctive_os_inzt" in str(result.errors[0])
+
+
+def test_the_has_guard_reopens_the_hole_and_only_the_engine_closes_it(schema):
+    """S2.2's claim was too strong, found at S2.5. Corrected here.
+
+    `has` is well typed for *any* attribute name -- asking whether a record has
+    an attribute is legitimate even when it statically cannot. So the guarded
+    form validates with a misspelled flag, and the policy silently never fires.
+
+    That is not an edge case: the guarded form is the only one Cedar will accept
+    for an optional attribute, so the idiom S2.2 mandates is exactly the one
+    that defeats S2.2's typo check. What actually closes the hole is the
+    engine's coverage check (S2.5) -- see tests/test_fail_closed.py.
+    """
+    guarded = (f'permit (principal, action == {INVOKE}, resource) when '
+               '{ context.flags has destuctive_os_inzt && '
+               'context.flags.destuctive_os_inzt };')
+    assert validate(guarded, schema).validation_passed
 
 
 def test_an_unguarded_flag_access_does_not_validate(schema):

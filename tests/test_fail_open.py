@@ -17,8 +17,19 @@ absurdly, on how many tokens a comment contains:
                            but was never added to predicate_table
 
 Each xfail(strict=True) states what *should* happen; the plain tests beside it
-record what does. The xfails turn green at plan.md S2.5, when the Cedar engine
-validates the policy set at startup and refuses to run on failure. That is RQ6.
+record what does.
+
+**These xfails do not flip, and that is deliberate** (revised at S2.5). The plan
+expected them to turn green once the Cedar engine validated at startup, but they
+assert on `Rule.from_text` -- AgentSpec's own loader -- and building a second
+engine does not change it. The only way to make them pass is to patch
+`src/rule.py`, and then every comparison in the thesis would be against a
+baseline we had repaired rather than against AgentSpec. So they stay red by
+design, as the record of what the baseline does.
+
+RQ6 is answered in `tests/test_fail_closed.py` instead: the same four mistakes,
+put to `agentguard.engine.load()`, are load-time errors that stop the agent
+starting. The two files are meant to be read side by side.
 """
 import re
 
