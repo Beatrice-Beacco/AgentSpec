@@ -16,9 +16,10 @@ deterministically. That is this module.
                allow                (least restrictive)
 
 The join takes the most restrictive. It exists because **Cedar does not return
-determining policies in source order** -- docs/spikes.md S1.2 saw
-`['policy2', 'policy1']` for a two-forbid decision -- so anything that read "the
-first determining policy" would be reading an unspecified ordering. The join
+determining policies in any fixed order** -- `diagnostics.reasons` comes out of a
+hash set, so the same policy set and the same request come back ordered
+differently from one call to the next (docs/spikes.md S1.2) -- so anything that
+read "the first determining policy" would be reading an unspecified ordering. The join
 makes ordering irrelevant by construction, which is precisely the property
 AgentSpec's `for rule in self.rules: ... return` loop lacks (its `skip` before
 `stop` gives SKIPPED and the reverse gives STOPPED; ui/examples.py example 8).
