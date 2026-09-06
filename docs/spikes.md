@@ -88,8 +88,14 @@ The join takes the most restrictive: `stop > user_inspection > llm_self_reflect
 > skip > allow`. An unannotated `forbid` defaults to `stop`, the safe end.
 
 **And the order matters more than expected.** For the two-flag case Cedar
-returned `['policy2', 'policy1']` — *not* source order. Any scheme that took
-"the first determining policy" would be reading an unspecified ordering.
+returned `['policy2', 'policy1']` — *not* source order. The stronger statement
+is the true one: `diagnostics.reasons` comes back out of a hash set, so the
+order is not merely different from source order, it is not fixed at all. The
+same policy set and the same request, asked repeatedly, come back ordered
+differently — all six orderings of three determining policies show up, roughly
+uniformly (`tests/test_order_independence.py` samples this rather than
+asserting on one draw, which is a coin flip). Any scheme that took "the first
+determining policy" would be reading an unspecified ordering.
 AgentSpec's `validate_and_enforce` does exactly that with its rule list, which
 is why `skip` before `stop` gives SKIPPED and the reverse gives STOPPED
 (see `ui/examples.py` example 8). The lattice join makes ordering irrelevant by

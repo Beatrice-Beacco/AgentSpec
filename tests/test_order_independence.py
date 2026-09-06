@@ -71,15 +71,25 @@ def state_for(tool_input=DESTRUCTIVE_INPUT):
                      user_input="Delete the unimportant txt file")
 
 
-def decide_with(order, tmp_path):
-    """Write the policies in this order, load them for real, and decide."""
+def load_from(order, tmp_path):
+    """Write the policies in this order and load them for real.
+
+    The cache is cleared on both sides because `tmp_path` does not change
+    between calls within a test, and a cached bundle would hand back the
+    *previous* order's synthetic ids.
+    """
     (tmp_path / "schema.cedarschema").write_text(ag_schema.generate(),
                                                  encoding="utf-8")
     (tmp_path / "core.cedar").write_text("\n\n".join(order), encoding="utf-8")
     engine.load.cache_clear()
-    verdict = engine.decide(engine.load(str(tmp_path)), state_for())
+    bundle = engine.load(str(tmp_path))
     engine.load.cache_clear()
-    return verdict
+    return bundle
+
+
+def decide_with(order, tmp_path):
+    """Write the policies in this order, load them for real, and decide."""
+    return engine.decide(load_from(order, tmp_path), state_for())
 
 
 def outcome_of(verdict):
@@ -132,19 +142,40 @@ def test_the_join_is_the_most_restrictive_not_the_first_listed(tmp_path):
     assert ag_advice.rank(ag_advice.STOP) < ag_advice.rank(ag_advice.SKIP)
 
 
-def test_cedar_still_does_not_list_determining_policies_in_source_order(tmp_path):
+#: How many times to ask the same question below. `diagnostics.reasons` comes
+#: out of a hash set, so a single sample settles nothing: one of the six
+#: orderings of three ids *is* source order, and asserting "not sorted" on one
+#: draw fails about one run in six. It did, on master. Repeating instead turns
+#: the flake into the actual property -- 25 identical answers would mean Cedar
+#: had become deterministic, which is the only thing worth failing over.
+REASON_SAMPLES = 25
+
+
+def test_cedar_does_not_promise_an_order_for_the_determining_policies(tmp_path):
     """The reason the join exists at all (docs/spikes.md S1.2).
 
-    If Cedar listed them in source order, "take the first" would be a defensible
-    (if fragile) design. It does not, so it never was.
-    """
-    verdict = decide_with([BASELINE] + POLICIES, tmp_path)
-    ids = list(verdict.policy_ids)
+    If Cedar listed the determining policies in *any* defined order -- source
+    order, say -- then "take the first" would be a defensible (if fragile)
+    design. It does not: one policy set, one request, asked repeatedly, comes
+    back ordered differently each time. There is no first to take.
 
-    assert len(ids) == 3
-    assert ids != sorted(ids), (
-        "Cedar happened to return source order this time; the property under "
-        "test is unaffected, but the claim in docs/spikes.md needs re-checking")
+    Which policies determined the decision is of course stable; only their
+    order is not. Both halves are asserted, because it is the second one alone
+    that the lattice exists to absorb.
+    """
+    bundle = load_from([BASELINE] + POLICIES, tmp_path)
+    orders = [tuple(engine.decide(bundle, state_for()).policy_ids)
+              for _ in range(REASON_SAMPLES)]
+
+    assert all(len(ids) == 3 for ids in orders)
+    assert all(set(ids) == set(orders[0]) for ids in orders), (
+        "the set of determining policies changed between identical requests; "
+        "that is a Cedar bug, not an ordering question")
+    assert len(set(orders)) > 1, (
+        f"Cedar returned {orders[0]} on all {REASON_SAMPLES} identical "
+        "requests. The property under test is unaffected -- the join does not "
+        "care whether the order is stable -- but docs/spikes.md S1.2 says the "
+        "order is unspecified, and that claim now needs re-checking")
 
 
 # ------------------------------------------------- sensors: also independent

@@ -416,9 +416,11 @@ Two details that make this a real result rather than a tautology:
   synthetic policy ids (`policy0`, `policy1`, …) **by position** each time. A
   resolution that keyed on those ids would break here, and an earlier design
   that took "the first determining policy" would have been reading them.
-* Cedar does not return determining policies in source order (docs/spikes.md
-  S1.2, re-checked by a test here). So "take the first" was never a defensible
-  design — it would have been sampling an unspecified ordering.
+* Cedar does not return determining policies in any fixed order — the same
+  request asked 25 times comes back ordered several different ways
+  (docs/spikes.md S1.2, re-checked by a test here). So "take the first" was
+  never a defensible design — it would have been sampling an unspecified
+  ordering, literally.
 
 Sensor order is independent too, checked the same way: shuffling the order the
 25 code sensors run in never changes the materialised flags. That would stop
