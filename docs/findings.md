@@ -315,6 +315,57 @@ everything. AgentSpec starts happily with an empty rule list — and that is not
 bug in AgentSpec, it is a different notion of where policy lives (see the
 example-3 disagreement at S1.8). S2.7 has to choose one deliberately.
 
+### Order independence, measured — S2.8
+
+Thesis claim M2, as a counterexample rather than an argument. The same three
+guards, expressed once as AgentSpec rules and once as Cedar policies, under
+every ordering of the three.
+
+**AgentSpec** — `validate_and_enforce` walks `self.rules` and returns on the
+first rule that does not say CONTINUE, so the first *deciding* rule wins:
+
+| rule order | verdict |
+|---|---|
+| suppress → halt → pass | SKIPPED |
+| suppress → pass → halt | SKIPPED |
+| halt → suppress → pass | **STOPPED** |
+| halt → pass → suppress | **STOPPED** |
+| pass → suppress → halt | SKIPPED |
+| pass → halt → suppress | **STOPPED** |
+
+**2 distinct verdicts from 6 orderings of the same rule set.** Nothing in the
+rules changed — only the order they were listed in. A reviewer reading any one
+of those files cannot tell what the guard will do without also knowing the
+order, and neither can a tool.
+
+**AgentGuard** — the same three, as `@advice("skip")`, `@advice("stop")`,
+`@advice("user_inspection")` forbids:
+
+| policy order | decision | advice |
+|---|---|---|
+| all six orderings | Deny | **stop** |
+
+**1 outcome from 6 orderings**, and from 100 random shuffles besides. The
+outcome is the *join* — the most restrictive — so it is also the answer a reader
+of any single ordering would want.
+
+Two details that make this a real result rather than a tautology:
+
+* Every shuffle goes through `engine.load()` on disk, so Cedar reassigns the
+  synthetic policy ids (`policy0`, `policy1`, …) **by position** each time. A
+  resolution that keyed on those ids would break here, and an earlier design
+  that took "the first determining policy" would have been reading them.
+* Cedar does not return determining policies in source order (docs/spikes.md
+  S1.2, re-checked by a test here). So "take the first" was never a defensible
+  design — it would have been sampling an unspecified ordering.
+
+Sensor order is independent too, checked the same way: shuffling the order the
+25 code sensors run in never changes the materialised flags. That would stop
+holding the moment a sensor acquired a side effect another could observe, which
+is why it is pinned rather than assumed.
+
+Reproduce: `tests/test_order_independence.py` (7 tests).
+
 ### Where policy lives, decided — S2.7
 
 The disagreement surfaced three times before it was settled: bench example 3
