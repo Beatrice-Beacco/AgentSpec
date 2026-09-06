@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 168 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 182 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -38,6 +38,9 @@ sensors:  ## list the sensor registry (name, domain, cost, reads)
 
 schema:  ## regenerate policies/schema.cedarschema from the sensor registry
 	@$(PY) -m agentguard.schema
+
+golden:  ## regenerate the S2.3 golden request (review the diff!)
+	@$(PY) tests/golden_request.py
 
 test-cedar: $(PYTEST)  ## force the whole suite onto the Cedar engine (S2.7 target)
 	@AGENTGUARD=cedar $(PYTEST) -q; \

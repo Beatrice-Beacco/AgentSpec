@@ -94,15 +94,27 @@ def test_reads_is_derived_from_the_predicate_source():
         assert sensor.reads == expected, sensor.name
 
 
-def test_only_one_predicate_reads_the_user_task():
-    """35 of 36 judge the proposed action with no idea what was asked for.
+def test_no_predicate_actually_uses_the_user_task():
+    """**All 36** judge the proposed action with no idea what was asked for.
 
-    A guard that cannot relate the action to the request cannot tell "delete the
-    temp file I asked you to delete" from "delete something else". The one
-    exception is `predicate11`, whose name is itself a placeholder.
+    `reads` says only `predicate11` mentions `user_input` -- but it only
+    *forwards* the argument to four helpers that ignore it, so its answer does
+    not depend on the task either. Measured below rather than read off the AST,
+    because "references the name" and "uses the value" are different claims and
+    the first one overstates the corpus.
+
+    It matters for RQ2b: a guard that cannot relate the action to the request
+    cannot tell "delete the temp file I asked you to delete" from "delete
+    something else", so it has no way to avoid that whole class of false
+    positive.
     """
-    readers = [s.name for s in sensors.SENSORS.values() if "user_input" in s.reads]
-    assert readers == ["predicate11"]
+    referencing = [s.name for s in sensors.SENSORS.values() if "user_input" in s.reads]
+    assert referencing == ["predicate11"]
+
+    p11 = sensors.get("predicate11").predicate
+    fires = "pyperclip.paste()"
+    assert p11("delete my files", fires, []) == p11("say hello politely", fires, [])
+    assert p11("a", "print(1)", []) == p11("b", "print(1)", [])
 
 
 # --------------------------------------------------------------------- cost
@@ -237,16 +249,19 @@ def test_every_raising_sensor_is_one_the_metadata_warned_about():
 
 # --------------------------------------------------------- executor wiring
 
-def test_the_executor_selects_through_the_registry():
+def test_the_engine_selects_by_domain_not_by_name():
+    """S2.3: the executor names a domain, and the registry decides the rest."""
     from agentguard import executor                   # noqa: PLC0415
+    from agentguard import request                    # noqa: PLC0415
 
-    assert set(executor.ACTIVE_SENSORS) <= set(sensors.SENSORS)
-    assert all(isinstance(s, sensors.Sensor) for s in executor.sensors().values())
+    assert executor.DOMAIN == sensors.CODE
+    chosen = request.select(executor.DOMAIN)
+    assert chosen == sensors.by_domain(sensors.CODE)
+    assert all(isinstance(s, sensors.Sensor) for s in chosen)
 
 
-def test_a_typo_in_the_active_set_fails_at_construction(monkeypatch):
-    from agentguard import executor                   # noqa: PLC0415
+def test_a_typo_in_an_explicit_selection_fails_immediately(monkeypatch):
+    from agentguard import request                    # noqa: PLC0415
 
-    monkeypatch.setattr(executor, "ACTIVE_SENSORS", ("destuctive_os_instt",))
     with pytest.raises(KeyError):
-        executor.sensors()
+        request.select(names=("destuctive_os_instt",))

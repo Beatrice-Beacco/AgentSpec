@@ -27,6 +27,7 @@ if REPO_ROOT not in sys.path:
 
 import agentguard                                        # noqa: E402
 from agentguard import executor as ag                    # noqa: E402
+from agentguard import request as ag_request             # noqa: E402
 from agent import Action                                 # noqa: E402
 from state import RuleState                              # noqa: E402
 
@@ -132,7 +133,7 @@ def test_both_engines_reach_the_same_verdict(tool_input, final, expect_tool,
 
 def test_the_sensor_fires_on_a_destructive_call():
     _action, state = state_for(DESTRUCTIVE_INPUT)
-    assert ag.run_sensors(state) == {"destuctive_os_inst": True}
+    assert ag_request.materialise(state).evaluated["destuctive_os_inst"] is True
 
 
 def test_the_sensor_stays_quiet_on_arithmetic():
@@ -142,8 +143,9 @@ def test_the_sensor_stays_quiet_on_arithmetic():
     (S2.2) Cedar makes a policy distinguish the two, so the request has to.
     """
     _action, state = state_for(BENIGN_INPUT)
-    assert ag.run_sensors(state) == {"destuctive_os_inst": False}
-    assert ag.fired(ag.run_sensors(state)) == []
+    material = ag_request.materialise(state)
+    assert material.evaluated["destuctive_os_inst"] is False
+    assert "destuctive_os_inst" not in material.fired
 
 
 def test_a_finish_action_has_nothing_to_sense():
@@ -154,13 +156,15 @@ def test_a_finish_action_has_nothing_to_sense():
     """
     finish = Action.get_finish("done", "done")
     state = RuleState(action=finish, agent=None, intermediate_steps=[])
-    assert ag.run_sensors(state) == {}
+    assert ag_request.materialise(state).evaluated == {}
 
 
 def test_a_dict_tool_input_does_not_crash_the_sensors():
     """Structured tools pass a dict, not a string."""
     _action, state = state_for({"task_id": "1"})
-    assert ag.run_sensors(state) == {"destuctive_os_inst": False}
+    material = ag_request.materialise(state)
+    assert material.evaluated["destuctive_os_inst"] is False
+    assert material.errors == ()
 
 
 # ------------------------------------------------------------ decisions
@@ -209,7 +213,7 @@ def test_an_engine_error_is_not_an_allow(bundle, monkeypatch):
     permission, an engine fault would become a silent allow: the failure mode
     the whole project exists to remove. Found while writing S1.7.
     """
-    monkeypatch.setattr(ag, "build_entities", lambda tool: [
+    monkeypatch.setattr(ag_request, "build_entities", lambda tool: [
         {"uid": {"type": "AgentGuard::Agent", "id": "agent"},
          "attrs": {"framework": 42}, "parents": []},
     ])
