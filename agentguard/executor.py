@@ -35,8 +35,9 @@ Run the suite through it with:
 import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
-from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
+from enforcement import EnforceResult
 from agentguard import advice as ag_advice
+from agentguard import enforcer as ag_enforcer
 from agentguard import engine as ag_engine
 from agentguard import request as ag_request
 from state import RuleState
@@ -60,25 +61,12 @@ decide = ag_engine.decide
 DOMAIN = ag_request.DEFAULT_DOMAIN
 
 
-# ---------------------------------------------------------------- advice
-# The lattice, the join and the substitution rule live in agentguard/advice.py
-# (S2.4). What stays here is the map onto AgentSpec's own enforcement classes,
-# which S2.6 moves to agentguard/enforcer.py.
+# --------------------------------------------------------------- advice
+# The lattice and the join are agentguard/advice.py (S2.4); applying the
+# resolved outcome is agentguard/enforcer.py (S2.6). Re-exported here because
+# tests and the bench reach for them by the engine's name.
 
-#: Advice -> the key in AgentSpec's ENFORCEMENT_TO_CLASS. The lattice names were
-#: chosen to line up with it, so this is almost an identity; the one real entry
-#: is `allow`, which AgentSpec spells `none`. `substitute` has no entry: the
-#: baseline's InvokeAction is unregistered and a no-op (docs/findings.md D-5),
-#: so S2.6 has to implement the rewrite rather than delegate it.
-ADVICE_TO_ENFORCEMENT = {
-    ag_advice.ALLOW: "none",
-    ag_advice.SKIP: "skip",
-    ag_advice.LLM_SELF_REFLECT: "llm_self_reflect",
-    ag_advice.USER_INSPECTION: "user_inspection",
-    ag_advice.STOP: "stop",
-}
-
-#: Re-exported so callers do not reach past the engine for the common cases.
+ADVICE_TO_ENFORCEMENT = ag_enforcer.ADVICE_TO_ENFORCEMENT
 DEFAULT_ADVICE = ag_advice.DEFAULT
 ADVICE_LATTICE = list(ag_advice.LATTICE)
 join = ag_advice.join
@@ -97,7 +85,7 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
         load_bundle(domain=DOMAIN)
         return super().from_agent_and_tools(agent, tools, rules, callbacks, **kwargs)
 
-    def validate_and_enforce(self, action: Action, state: RuleState):
+    def validate_and_enforce(self, action: Action, state: RuleState, _redirects=0):
         """Return (what fired, the action to take) -- same contract as the legacy engine."""
         if action.is_finish():
             # `action finish` is not in the schema until S2.7, and the sensors
@@ -110,20 +98,32 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
         if verdict.allowed:
             return None, action
 
-        enforcement = ENFORCEMENT_TO_CLASS[ADVICE_TO_ENFORCEMENT[verdict.advice]]
         with profiling.phase("enforcement"):
-            outcome, next_action = enforcement(state=state).apply(action)
+            outcome = ag_enforcer.apply(verdict, action, state, tools=self.tools)
 
-        if outcome == EnforceResult.CONTINUE:
+        if outcome.redirected:
+            # The action changed -- re-planned by llm_self_reflect, or rewritten
+            # by a substitution. It has not been through the policy set, and
+            # running it unguarded would make @substitute_tool a way around the
+            # guard. Bounded, because two policies that redirect to each other
+            # would otherwise loop forever.
+            if _redirects >= ag_enforcer.MAX_REDIRECTS:
+                reason = (f"action stopped by {verdict.raw}\n"
+                          f"  note: gave up after {ag_enforcer.MAX_REDIRECTS} redirects")
+                return verdict, Action.get_finish(reason, reason)
+            if outcome.action.is_finish():
+                # llm_self_reflect can re-plan straight to a final answer.
+                return verdict, outcome.action
+            return self.validate_and_enforce(outcome.action, state, _redirects + 1)
+
+        if outcome.result == EnforceResult.CONTINUE:
             # `user_inspection` where the user approved, or `none`.
-            return None, action
-        if outcome == EnforceResult.SKIP:
+            return None, outcome.action
+        if outcome.result == EnforceResult.SKIP:
             return verdict, Action.get_skip()
-        if outcome == EnforceResult.STOP:
+        if outcome.result == EnforceResult.STOP:
             # Phrased exactly as the legacy executor phrases it, so the text the
             # agent and the tests see is identical across engines.
             reason = f"action stopped by {verdict.raw}"
             return verdict, Action.get_finish(reason, reason)
-        if outcome == EnforceResult.SELF_REFLECT:
-            return self.validate_and_enforce(next_action, state)
-        raise ValueError(f"unreachable enforcement result: {outcome}")
+        raise ValueError(f"unreachable enforcement result: {outcome.result}")

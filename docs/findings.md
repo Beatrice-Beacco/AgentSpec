@@ -153,6 +153,80 @@ Reproduce: the probe is in the S2.4 log entry of `plan.md`;
 `tests/test_advice.py::test_substitute_has_no_enforcement_class_yet` pins our
 side of it.
 
+## D-6 · `llm_self_reflect` crashes the run
+
+*Found 2026-09-06 during S2.6.*
+
+`LLMSelfReflect.apply` ends with:
+
+```python
+action_prime = ctx.agent.plan(ctx.intermediate_steps, callbacks=..., **inputs_prime)
+ctx.reflection_depth = ctx.reflection_depth + 1
+return EnforceResult.SELF_REFLECT, action_prime
+```
+
+`action_prime` is whatever `agent.plan()` returned — a LangChain `AgentAction` or
+`AgentFinish` — **not** an AgentSpec `Action`. The executor then does
+
+```python
+elif res == EnforceResult.SELF_REFLECT:
+    return self.validate_and_enforce(action, state)   # `action` is now action_prime
+```
+
+and the first statement of that method is `action.is_finish()`. Verified end to
+end through the bench:
+
+```
+verdict: ERROR
+AttributeError: 'AgentFinish' object has no attribute 'is_finish'
+```
+
+A second, smaller bug sits beside it: `**inputs_prime` requires a mapping, so
+`llm_self_reflect` also raises `TypeError` whenever `user_input` is a plain
+string. The executor always passes a dict, so this only bites direct callers —
+the bench and the tests among them.
+
+**Why it matters.** One of AgentSpec's five named enforcement outcomes cannot
+complete. Together with D-5 (`invoke_action` unreachable), **two of the six
+enforcement forms the grammar accepts do not work**, leaving `stop`, `skip`,
+`user_inspection` and `none`.
+
+Our enforcer wraps the return value rather than copying the bug
+(`agentguard/enforcer.py::_as_action`), which is the only reason
+`enforce llm_self_reflect` has an outcome at all on our side. The write-up must
+not present that as an improvement in *expressiveness*: it is the same feature,
+made to work.
+
+Reproduce: `tests/test_enforcer.py::test_llm_self_reflect_replans_and_the_result_is_usable`.
+
+## D-7 · The enforcement side of the corpus is as broken as the predicate side
+
+*Found 2026-09-06 during S2.6.*
+
+Every `enforce` clause in `src/rules/**`, counted:
+
+| clause | uses | executes? |
+|---|---:|---|
+| `user_inspection` | 31 | yes |
+| `stop` | 9 | yes |
+| apollo `config` assignments (`real:preference:... = 20.00` etc.) | 18 | no |
+| `llm_self_examine` | 1 | no — not a grammar token; the token is `llm_self_reflect` |
+| `user_inspection("make sure the is reasonable")` | 1 | no — `ENFORCEMENT` is a bare token, arguments do not parse |
+
+So 40 of 61 enforcement clauses use one of the two outcomes that work.
+
+The 18 apollo clauses are a separate matter and should not be folded into a
+single "broken" number: `src/rules/apollo/*.rule` is a different rule family
+(vehicle-planner parameters) whose `check` clauses use call syntax —
+`v_f_disL(10)` — that `RuleInterpreter.eval_predicate` rejects with
+`ValueError: unsupported type` *before* enforcement is ever reached. That family
+was never executable by this interpreter, rather than being broken by a
+regression.
+
+**Why it matters.** RQ1 is about how much of the corpus can be brought across.
+The answer is bounded on the enforcement side as well as the predicate side, and
+`docs/coverage.md` (S3.5) needs both numbers.
+
 ---
 
 ## Observations on the design (not corpus defects)
