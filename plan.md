@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 2, Step S2.2 (generate the schema from the registry).
+**Current position:** Sprint 2, Step S2.3 (request materialisation).
 
 ---
 
@@ -177,10 +177,19 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       ⚠️ **The third domain does not exist.** 25 code + 11 embodied; `toolemu.py` is
       an empty file and `terminal.py`'s 4 predicates are never merged into
       `predicate_table`. Carry into S3.4 and S6.3, which both assume otherwise.
-- [ ] **S2.2** `agentguard/schema.py` — generate `schema.cedarschema` **from** the sensor
+- [x] **S2.2** `agentguard/schema.py` — generate `schema.cedarschema` **from** the sensor
       registry, so flags are a validated record-of-bools rather than free strings.
-      Keep the `Set<String>` variant behind a flag so we can compare both (thesis §C.2).
-      *Accept:* regenerating the schema after adding a sensor requires no hand-editing.
+      Keep the `Set<String>` variant behind a flag so we can compare both (thesis §C.2). ✅ 2026-09-06
+      `make schema` regenerates; `make validate` now **fails if the file on disk has
+      drifted** from the registry, so a hand-edited schema cannot ship. The variant is
+      recorded in the generated header and read back by the request builder, so the two
+      cannot disagree. Both variants stay generatable for the §C.2 comparison.
+      ⚠️ **The Bools are optional (`name?: Bool`), which the plan did not anticipate** —
+      required attributes would force the request to carry all 36 flags or Cedar answers
+      `NoDecision`, i.e. send `false` for 35 sensors that never ran. See the log.
+      *Accept:* ✅ `tests/test_schema_codegen.py` (17 tests) adds a flag and regenerates
+      with no template change; S1.5's "misspelled flag is missed" test has flipped to
+      `test_a_misspelled_flag_is_now_caught`.
 - [ ] **S2.3** `agentguard/request.py` — materialisation: `RuleState → (Request, Entities)`.
       Runs sensors, builds principal/action/resource/context.
       *Accept:* golden-file test: a fixed `RuleState` produces a fixed JSON request.
@@ -406,3 +415,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-05 | S1.7 | Cedar decides, end to end. Two findings, both about failing **closed**. (1) When Cedar cannot evaluate a request it returns `Decision.NoDecision` and puts the cause in `diagnostics.errors` — it does not raise. A malformed entity store does exactly this. Any engine that reads "not Deny" as permission turns an internal fault into a **silent allow**, which is the failure mode this project exists to remove; `decide()` treats NoDecision-or-errors as `stop`. (2) The tool name reaches the request from the model's own output, so it is attacker-influenced whenever the task prompt is. Interpolated raw into `Tool::"..."` a crafted name closes the uid early — verified: it yields `failed to parse schema from request`, so unescaped it is a denial of service rather than a bypass, but only because of finding (1). Escaped at the boundary anyway; a parser is not an access control. Also worth recording: under Cedar the policy set comes from `policies/`, not from the `rules=` argument, so `test_no_rules_means_no_interference` legitimately changes meaning — S2.7 has to decide what "no rules" means for an engine whose policies are ambient. |
 | 2026-09-05 | S1.8 | Panel wired, and it immediately earned its keep: **example 3 disagrees**. "No rules loaded" is AgentSpec's control case — an empty rule list means nothing can fire — but AgentGuard's policy set is *ambient*, loaded from `policies/` rather than passed in, so the same call is denied. Neither engine is wrong; the two have different notions of where policy lives, and S2.7 has to pick one deliberately. **Example 7** is the other one worth looking at: a rule that does not parse takes the AgentSpec run down mid-flight (verdict ERROR) while Cedar still returns a decision — RQ6 visible in the UI rather than argued in prose. Panel is a decision, not a second agent run; the engine toggle and the verdict diff stay with S2.10. |
 | 2026-09-06 | S2.1 | Registry landed, and the metadata is derived rather than declared — `reads` from the AST, `domain` from the defining module, `cost` from `reads` — so S2.2 can generate the schema without a hand-maintained table in the middle of it. Three findings. (1) **The plan's third domain is empty.** `rules/manual/toolemu.py` is a 0-byte file and `terminal.py` keeps its four predicates in a private `table` dict `table.py` never merges, so the registry is 25 code + 11 embodied and *zero* toolemu. `src/rules/__pycache__/` still holds **38 orphaned `.pyc` files** with no `.py` source — `tool_emu_predicate_table` and 30+ per-toolkit predicate modules — so that layer was deleted upstream and survives only as bytecode. S3.4 and S6.3 both assume it exists. (2) **Domain is not decoration:** run an embodied sensor on a code agent's trace and it *raises* rather than returning False — 5 of 11 do — and the exception class is not even stable (`is_unsafe_fillliquid` gives AttributeError on an input with spaces, IndexError without). So "catch the known exception" is not available to S2.3; only not running the sensor is. Every raising sensor is one whose `reads` include `intermediate_steps`, so the metadata is sufficient to avoid them — that is a test. (3) **35 of 36 predicates never look at the user's task.** Only `predicate11` reads `user_input`, and its name is a placeholder. A guard that cannot relate the action to the request cannot distinguish the deletion that was asked for from the one that was not — relevant to RQ2b, since it bounds how few false positives the baseline can possibly achieve. |
+| 2026-09-06 | S2.2 | Schema is generated from the registry, and `make validate` fails when the file on disk no longer matches it — a hand-edited schema type-checks perfectly and silently drops a flag, which is a policy that can never fire, so the staleness check is the point rather than tidiness. **The plan's record-of-Bools has a sub-variant it did not name, and only one of the two is honest.** With *required* attributes Cedar answers `NoDecision` unless the request carries every declared flag — so shipping them would mean sending `false` for the 35 sensors that never ran, asserting "the dangerous thing is not happening" about checks nobody performed. That is the exact fail-open shape this project exists to remove. With *optional* attributes the request carries only what was evaluated, and Cedar **refuses to validate an unguarded access** (`unable to guarantee safety of access`) — so a policy is forced to write `context.flags has X && context.flags.X` and the three states stay distinct: fired / ran-and-said-no / never-ran. The verbosity is the honesty, and it is mechanical, so S3.3's compiler emits it. `run_sensors` now returns a map rather than a list of names for the same reason. S1.5's deliberately-failing test has flipped: a misspelled flag is now rejected by name at load. Bench shows `destuctive_os_inst = false` as a distinct muted pill, so "ran and said no" is visible rather than inferred. |

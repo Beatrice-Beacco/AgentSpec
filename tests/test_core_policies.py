@@ -49,11 +49,13 @@ def schema():
 
 
 def decide(policies, flags, tool="python_repl", schema=None):
+    """`flags` is {name: bool} for the sensors that ran -- the record shape the
+    generated schema declares (S2.2). Absent means the sensor never ran."""
     return cedarpy.is_authorized({
         "principal": 'AgentGuard::Agent::"a1"',
         "action": INVOKE,
         "resource": f'AgentGuard::Tool::"{tool}"',
-        "context": {"flags": list(flags)},
+        "context": {"flags": dict(flags)},
     }, policies, ENTITIES, schema)
 
 
@@ -81,7 +83,7 @@ def test_core_has_exactly_the_two_policies_the_step_asks_for(policies):
 # ---------------------------------------------------------- both verdicts
 
 def test_destructive_call_is_denied(policies, schema):
-    result = decide(policies, ["destuctive_os_inst"], schema=schema)
+    result = decide(policies, {"destuctive_os_inst": True}, schema=schema)
     assert result.decision == cedarpy.Decision.Deny
     assert not result.diagnostics.errors
     named = result.diagnostics.id_annotations_by_reason.values()
@@ -91,14 +93,14 @@ def test_destructive_call_is_denied(policies, schema):
 def test_benign_call_is_allowed(policies, schema):
     """The false-positive guard. A policy set that denies everything passes the
     test above and is worthless."""
-    result = decide(policies, [], schema=schema)
+    result = decide(policies, {"destuctive_os_inst": False}, schema=schema)
     assert result.decision == cedarpy.Decision.Allow
     assert not result.diagnostics.errors
 
 
 def test_the_forbid_is_scoped_to_the_python_repl(policies, schema):
     """`trigger PythonREPL` is a resource constraint, not a global condition."""
-    result = decide(policies, ["destuctive_os_inst"], tool="shell", schema=None)
+    result = decide(policies, {"destuctive_os_inst": True}, tool="shell", schema=None)
     assert result.decision == cedarpy.Decision.Allow
 
 
@@ -106,7 +108,7 @@ def test_the_forbid_is_scoped_to_the_python_repl(policies, schema):
 
 def test_the_deny_carries_its_enforcement_outcome(policies):
     """Deny alone is not actionable: the executor needs one of five outcomes."""
-    result = decide(policies, ["destuctive_os_inst"])
+    result = decide(policies, {"destuctive_os_inst": True})
     table = advice_table(policies)
     advice = {table[pid].get("advice", "stop") for pid in result.diagnostics.reasons}
     assert advice == {"stop"}

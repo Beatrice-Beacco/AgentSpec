@@ -8,9 +8,11 @@ these tests assert three things:
   2. the mistakes it is supposed to catch are caught -- the same classes
      docs/spikes.md S1.3 measured, but against the real file rather than a
      spike's inline string;
-  3. the one class it is known *not* to catch is still not caught, so the S2.2
-     decision to regenerate `flags` as a record of Bools stays evidence-backed
-     rather than assumed.
+  3. the one class S1.5 could *not* catch -- a misspelled flag -- now is,
+     because S2.2 regenerated `flags` as a record of optional Bools.
+
+The file itself is generated (agentguard/schema.py); tests for the *generator*
+are in tests/test_schema_codegen.py. These test the artifact it produces.
 """
 import os
 import sys
@@ -43,7 +45,10 @@ forbid (
   action   == {INVOKE},
   resource == AgentGuard::Tool::"python_repl"
 )
-when {{ context.flags.contains("destuctive_os_inst") }};
+when {{
+  context.flags has destuctive_os_inst &&
+  context.flags.destuctive_os_inst
+}};
 """
 
 
@@ -74,7 +79,7 @@ def test_the_schema_actually_decides(schema):
         "principal": 'AgentGuard::Agent::"a1"',
         "action": INVOKE,
         "resource": 'AgentGuard::Tool::"python_repl"',
-        "context": {"flags": ["destuctive_os_inst"]},
+        "context": {"flags": {"destuctive_os_inst": True}},
     }
     entities = [
         {"uid": {"type": "AgentGuard::Agent", "id": "a1"},
@@ -83,8 +88,9 @@ def test_the_schema_actually_decides(schema):
          "attrs": {"kind": "code_exec", "reversible": False}, "parents": []},
     ]
     denied = cedarpy.is_authorized(request, HAND_WRITTEN, entities, schema)
-    allowed = cedarpy.is_authorized({**request, "context": {"flags": []}},
-                                    HAND_WRITTEN, entities, schema)
+    allowed = cedarpy.is_authorized(
+        {**request, "context": {"flags": {"destuctive_os_inst": False}}},
+        HAND_WRITTEN, entities, schema)
 
     assert denied.decision == cedarpy.Decision.Deny
     assert allowed.decision == cedarpy.Decision.Allow
@@ -118,20 +124,34 @@ def test_unnamespaced_action_is_rejected(schema):
     assert not result.validation_passed
 
 
-# --------------------------------------------------- what it cannot catch
+# ------------------------------------------- what S2.2 newly makes catchable
 
-def test_a_misspelled_flag_is_not_caught(schema):
-    """The known hole in `flags: Set<String>`, and the reason S2.2 exists.
+def test_a_misspelled_flag_is_now_caught(schema):
+    """The S1.5 hole, closed by S2.2.
 
-    Any string is a valid set member, so this policy type-checks and then
-    silently never fires -- the exact failure mode tests/test_fail_open.py
-    documents for AgentSpec. When S2.2 regenerates `flags` as a record of named
-    Bools this must start failing; that is the signal to delete this test and
-    move the row in docs/spikes.md from "MISSED" to "caught".
+    Under `flags: Set<String>` any string was a valid member, so a typo'd flag
+    type-checked and the policy silently never fired -- the exact failure mode
+    tests/test_fail_open.py documents for AgentSpec. Under the generated record
+    the attribute does not exist and validation names the typo.
     """
     policy = (f'permit (principal, action == {INVOKE}, resource) '
-              'when { context.flags.contains("destuctive_os_inzt") };')
-    assert validate(policy, schema).validation_passed
+              'when { context.flags.destuctive_os_inzt };')
+    result = validate(policy, schema)
+    assert not result.validation_passed
+    assert "destuctive_os_inzt" in str(result.errors[0])
+
+
+def test_an_unguarded_flag_access_does_not_validate(schema):
+    """Cedar itself forces the `has` guard -- we do not have to lint for it.
+
+    "unable to guarantee safety of access to optional attribute". That is what
+    makes the optional record honest: a policy cannot quietly treat "never ran"
+    as "ran and said false", because it cannot compile without saying which it
+    means.
+    """
+    policy = (f'permit (principal, action == {INVOKE}, resource) '
+              'when { context.flags.destuctive_os_inst };')
+    assert not validate(policy, schema).validation_passed
 
 
 # ------------------------------------------------------ the tool itself

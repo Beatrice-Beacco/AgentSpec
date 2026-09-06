@@ -132,6 +132,16 @@ The last two rows are the *same typo* under two schema designs:
 > registry and accepts the codegen step. The plan recommended this on principle;
 > this is the evidence.
 
+**Done in S2.2**, with one refinement this spike did not anticipate: the Bools are
+**optional** (`name?: Bool`), not required. Required attributes force the request
+to carry all 36 flags or Cedar answers `NoDecision` — which would mean sending
+`false` for the 35 sensors that never ran, asserting "not happening" about checks
+nobody performed. Optional attributes let the request carry exactly what was
+evaluated, and Cedar then *refuses to validate* an unguarded access
+(`unable to guarantee safety of access`), so a policy must write
+`context.flags has X && context.flags.X` and cannot conflate the two. The
+verbosity is the honesty. See `tests/test_schema_codegen.py`.
+
 ---
 
 ## S1.4 — how fast is a decision? ✅
@@ -170,7 +180,7 @@ in `agentguard/engine.py`.
 
 ## Still open
 
-| Question | Step |
-|---|---|
-| Does the record-of-`Bool` schema stay maintainable as predicates are added? | S2.2 |
-| Does partial evaluation let us filter tools before the agent sees them? | later |
+| Question | Step | Answer |
+|---|---|---|
+| Does the record-of-`Bool` schema stay maintainable as predicates are added? | S2.2 | **Yes** — `agentguard/schema.py` generates it from the sensor registry, `make schema` regenerates, and `make validate` fails if the file on disk has drifted. Adding a predicate needs no schema edit. |
+| Does partial evaluation let us filter tools before the agent sees them? | later | open |

@@ -268,6 +268,18 @@ policy that does not type-check stops the agent *starting*:
 .venv/bin/python tools/validate_policies.py     # or: make validate
 ```
 
+`policies/schema.cedarschema` is **generated** from the sensor registry, not
+hand-written -- `make schema` regenerates it, and `make validate` fails if the
+file on disk has drifted from the registry. `context.flags` is a record of
+*optional* Bools, one per sensor, so a policy has to write
+`context.flags has X && context.flags.X`: the request carries only the sensors
+that actually ran, and Cedar refuses to validate an access that would confuse
+"ran and said no" with "never looked".
+
+```bash
+.venv/bin/python -m agentguard.sensors          # or: make sensors
+```
+
 It knows one sensor and two policies so far — the full registry is S2.1 — so
 `make test-cedar` currently fails 12 of 128 tests, all of them exercising legacy
 rules the two-policy set cannot cover. That number is the S2.7 worklist.

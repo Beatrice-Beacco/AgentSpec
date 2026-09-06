@@ -147,10 +147,16 @@ function renderCedar(c, legacyVerdict) {
   const deny = c.decision === 'Deny';
   const agrees = c.verdict === legacyVerdict;
 
-  const active = `${c.sensors.length} active of ${c.registered} registered`;
-  const flags = c.flags.length
-    ? c.flags.map(f => `<span class="pill bad" style="margin:2px 3px 2px 0">${esc(f)}</span>`).join('')
-    : `<span class="muted small">nothing fired</span>`;
+  const active = `${c.variant} schema · ${c.sensors.length} active of ${c.registered} registered`;
+  // Fired and merely-evaluated are different facts under the record schema
+  // (S2.2): a muted pill is a sensor that ran and said no, and a sensor that
+  // appears in neither list never ran at all.
+  const pill = (f, cls) =>
+    `<span class="pill ${cls}" style="margin:2px 3px 2px 0">${esc(f)}</span>`;
+  const quiet = (c.evaluated || []).filter(f => !c.flags.includes(f));
+  const flags = (c.flags.map(f => pill(f, 'bad')).join('') +
+                 quiet.map(f => pill(f + ' = false', 'mute')).join('')) ||
+    '<span class="muted small">no sensor ran</span>';
 
   const reasons = c.reasons.length
     ? '<table style="margin-top:8px"><tr><th>policy</th><th>@advice</th><th>@source</th></tr>' +
