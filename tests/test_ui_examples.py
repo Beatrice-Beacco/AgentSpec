@@ -40,12 +40,17 @@ def run_example(example, approve=True):
     )
 
 
+@pytest.mark.legacy_only(
+    "the bench's verdict is the legacy engine's; the Cedar panel is asserted "
+    "separately below")
 @pytest.mark.parametrize("example", EXAMPLES, ids=[e["name"][:2] for e in EXAMPLES])
 def test_example_produces_its_stated_verdict(example):
     expected = EXPECTED[example["name"][:2]]
     assert run_example(example)["verdict"] == expected
 
 
+@pytest.mark.legacy_only(
+    "asserts the enforcement an AgentSpec rule names; needs S3.3 to compile it")
 def test_user_inspection_flips_with_approval():
     """Example 5's whole point: the same input, two answers, two verdicts."""
     example = next(e for e in EXAMPLES if e["name"].startswith("5."))
@@ -53,6 +58,8 @@ def test_user_inspection_flips_with_approval():
     assert run_example(example, approve=False)["verdict"] == "SKIPPED"
 
 
+@pytest.mark.legacy_only(
+    "asserts order dependence, which Cedar removes by construction")
 def test_order_dependence_is_real():
     """Example 8 claims swapping the rules flips the verdict. Verify both ways."""
     example = next(e for e in EXAMPLES if e["name"].startswith("8."))
@@ -62,6 +69,8 @@ def test_order_dependence_is_real():
     assert run_example({**example, "rule_text": second + first})["verdict"] == "STOPPED"
 
 
+@pytest.mark.legacy_only(
+    "the `why` panel explains AgentSpec rules, which the Cedar engine ignores")
 def test_explain_reports_the_firing_rule():
     example = next(e for e in EXAMPLES if e["name"].startswith("1."))
     fired = [r["id"] for r in run_example(example)["explain"] if r["would_fire"]]

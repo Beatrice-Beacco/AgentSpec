@@ -315,6 +315,56 @@ everything. AgentSpec starts happily with an empty rule list — and that is not
 bug in AgentSpec, it is a different notion of where policy lives (see the
 example-3 disagreement at S1.8). S2.7 has to choose one deliberately.
 
+### Where policy lives, decided — S2.7
+
+The disagreement surfaced three times before it was settled: bench example 3
+(S1.8), the engine's refusal to start with no policies (S2.5), and
+`test_no_rules_means_no_interference` (S1.7 onward).
+
+| | AgentSpec | AgentGuard |
+|---|---|---|
+| where the policy set comes from | a `rules=` constructor argument | `$AGENTGUARD_POLICIES`, defaulting to `policies/` |
+| "no policy" | `rules=[]`, and the guard does nothing | refused — an engine with no policies allows everything |
+| who chooses | the code being guarded | whoever deploys it |
+
+**Decision: policy is ambient.** A guard whose rule set is a constructor
+argument is opt-in per construction site — the code being guarded can construct
+itself unguarded, and nothing notices. Reading the policy set from the
+environment makes it deployment configuration instead.
+
+This is a design claim, not a measurement, and the write-up should present it as
+one. It is also not free: "run with these rules" has no direct equivalent, which
+is exactly why the parity work below needs a translation rather than a
+comparison.
+
+### Parity, and what it can and cannot mean — S2.7
+
+`make test-cedar` runs the whole suite on the Cedar engine: **417 passed, 15
+skipped, 0 failed**. The 15 skips are not swept under the carpet; each carries
+its reason and `-rs` prints them.
+
+Every skipped test has an AgentSpec *rule* as its subject — it passes a rule in
+and asserts the enforcement that rule names, or asserts a property of rule-list
+evaluation order. Two things follow:
+
+1. Most of them are blocked on **S3.3**, the compiler. Until a rule can become a
+   policy, there is nothing for the Cedar engine to decide on.
+2. Two of them can never be engine-agnostic: they assert *order dependence*
+   (`test_first_matching_rule_decides`, `test_order_dependence_is_real`), which
+   is precisely the property the advice lattice removes. A test asserting that
+   swapping two rules flips the verdict is a test that Cedar must fail.
+
+So "every test passes under both engines", read literally, was never achievable
+at S2.7 and would not have been a good thing if it were. What is achievable, and
+what was done, is that every test either passes on both or states why it belongs
+to one.
+
+The one that *was* made engine-agnostic is worth noting, because it is the
+ambient-policy question in executable form:
+`test_no_rules_means_no_interference` now passes on both engines, with
+AgentSpec expressing "guard nothing" as `rules=[]` and AgentGuard expressing it
+as a policy set holding only the baseline permit.
+
 ### Sensor cost is dominated by input size, not sensor count — S2.3
 
 Running the whole code domain (25 sensors) against one sensor:
