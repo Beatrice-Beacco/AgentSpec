@@ -11,9 +11,11 @@ fed back to the agent) is reused unchanged, so a verdict difference between the
 two engines is a difference in *deciding*, not in plumbing. That is what makes
 the S1.7 parity test meaningful.
 
-Two things are deliberately not general yet, both by the step's own wording:
+Two things are deliberately not general yet:
 
-  * one hard-coded sensor. The full 36-predicate registry is S2.1.
+  * one *active* sensor. All 36 are registered (agentguard/sensors.py, S2.1);
+    this engine still evaluates one, because core.cedar still reads one flag.
+    S2.3 makes the selection domain-aware.
   * one hard-coded principal. The Session entity that carries taints across
     steps -- the actual thesis contribution -- is S4.2.
 
@@ -35,7 +37,7 @@ import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
 from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
-from rules.manual.table import predicate_table
+from agentguard import sensors as sensor_registry
 from state import RuleState
 
 NAMESPACE = "AgentGuard"
@@ -54,30 +56,37 @@ class PolicyError(RuntimeError):
 
 
 # ---------------------------------------------------------------- sensors
-# S2.1 moves this to agentguard/sensors.py with all 36 predicates and their
-# metadata. The shape stays: name -> callable(user_input, tool_input, steps).
+# The registry itself is agentguard/sensors.py (S2.1). What lives here is the
+# *selection*: which of the 36 this engine actually runs.
 
-SENSOR_NAMES = ("destuctive_os_inst",)
+#: The sensors this engine materialises. Still one, because core.cedar still
+#: reads one flag -- widening it would pay for 35 evaluations no policy asks
+#: about. S2.3 replaces the hard-coded tuple with a domain-aware selection,
+#: which is the point of Sensor.domain: six of the 36 raise rather than return
+#: False when run on a code agent's trace, because they are embodied sensors
+#: expecting embodied observations.
+ACTIVE_SENSORS = ("destuctive_os_inst",)
 
 
 def sensors():
-    """The predicates this engine materialises, by name."""
-    return {name: predicate_table[name] for name in SENSOR_NAMES}
+    """The Sensor objects this engine materialises, by name.
+
+    Resolved through the registry rather than indexing predicate_table
+    directly, so a typo is a KeyError at construction naming what is available
+    -- not, as in AgentSpec, a KeyError mid-run (S0.12's `is_malware`).
+    """
+    return {name: sensor_registry.get(name) for name in ACTIVE_SENSORS}
 
 
 def run_sensors(state: RuleState) -> List[str]:
-    """Evaluate every sensor over the proposed action; return the flags that fired.
+    """Evaluate every active sensor over the proposed action; return what fired.
 
     This is the impure half of the architecture and the only place arbitrary
     Python runs. Cedar expressions are pure and total, so a regex like
     `destuctive_os_inst` can never live inside a policy -- it runs here and
     arrives as a member of `context.flags`.
 
-    Exceptions are *not* caught. A sensor that raises would otherwise leave its
-    flag unset, which reads to Cedar as "the dangerous thing is not happening"
-    -- a safety rule that silently never fires, the exact failure mode
-    tests/test_fail_open.py documents. Crashing loudly is worse for uptime and
-    better for safety; S2.3 replaces it with an explicit fail-closed flag.
+    Exceptions are *not* caught; see sensors.evaluate for why.
     """
     tool_input = state.action.input if state.action else None
     if tool_input is None:
@@ -86,10 +95,12 @@ def run_sensors(state: RuleState) -> List[str]:
         # the schema until S2.7).
         return []
     text = tool_input if isinstance(tool_input, str) else str(tool_input)
-    return sorted(
-        name for name, predicate in sensors().items()
-        if predicate(state.user_input, text, state.intermediate_steps)
-    )
+    fired = []
+    for sensor in sensors().values():
+        if sensor_registry.evaluate(sensor, state.user_input, text,
+                                    state.intermediate_steps):
+            fired.extend(sensor.flags)
+    return sorted(set(fired))
 
 
 # ---------------------------------------------------------------- advice

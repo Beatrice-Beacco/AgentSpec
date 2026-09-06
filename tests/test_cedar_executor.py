@@ -72,7 +72,11 @@ def test_the_factory_builds_the_cedar_executor(cedar_env, agent_factory):
     assert isinstance(agent, ag.CedarControlledAgentExecutor)
 
 
-def test_the_factory_builds_the_legacy_executor_by_default(agent_factory):
+def test_the_factory_builds_the_legacy_executor_by_default(monkeypatch, agent_factory):
+    # Explicitly unset rather than trusting the ambient value: `make test-cedar`
+    # runs this whole suite with AGENTGUARD=cedar, and a test whose meaning
+    # changes with the environment is not testing the default.
+    monkeypatch.delenv("AGENTGUARD", raising=False)
     agent = agent_factory([], react_script(BENIGN_INPUT))
     assert not isinstance(agent, ag.CedarControlledAgentExecutor)
 
