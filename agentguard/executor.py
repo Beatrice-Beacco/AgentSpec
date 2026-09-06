@@ -38,6 +38,7 @@ import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
 from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
+from agentguard import advice as ag_advice
 from agentguard import request as ag_request
 from agentguard import schema as ag_schema
 from state import RuleState
@@ -68,37 +69,27 @@ DOMAIN = ag_request.DEFAULT_DOMAIN
 
 
 # ---------------------------------------------------------------- advice
-# S2.4 moves this to agentguard/advice.py, together with the `substitute`
-# rule (a rewrite may only apply when it is the unique determining policy).
+# The lattice, the join and the substitution rule live in agentguard/advice.py
+# (S2.4). What stays here is the map onto AgentSpec's own enforcement classes,
+# which S2.6 moves to agentguard/enforcer.py.
 
-#: Enforcement outcomes, most restrictive first (thesis §C.4).
-ADVICE_LATTICE = ["stop", "user_inspection", "llm_self_reflect", "skip", "allow"]
-
-#: Advice -> the key in AgentSpec's own ENFORCEMENT_TO_CLASS. The lattice names
-#: were chosen to line up with it, so this mapping is almost an identity; the
-#: one real entry is `allow`, which AgentSpec spells `none`.
+#: Advice -> the key in AgentSpec's ENFORCEMENT_TO_CLASS. The lattice names were
+#: chosen to line up with it, so this is almost an identity; the one real entry
+#: is `allow`, which AgentSpec spells `none`. `substitute` has no entry: the
+#: baseline's InvokeAction is unregistered and a no-op (docs/findings.md D-5),
+#: so S2.6 has to implement the rewrite rather than delegate it.
 ADVICE_TO_ENFORCEMENT = {
-    "allow": "none",
-    "skip": "skip",
-    "llm_self_reflect": "llm_self_reflect",
-    "user_inspection": "user_inspection",
-    "stop": "stop",
+    ag_advice.ALLOW: "none",
+    ag_advice.SKIP: "skip",
+    ag_advice.LLM_SELF_REFLECT: "llm_self_reflect",
+    ag_advice.USER_INSPECTION: "user_inspection",
+    ag_advice.STOP: "stop",
 }
 
-#: What an unannotated `forbid` means: the safe end of the lattice.
-DEFAULT_ADVICE = "stop"
-
-
-def join(advice) -> str:
-    """The most restrictive of several advice values.
-
-    The join exists because Cedar can return Deny from several policies at once
-    and does *not* list them in source order (docs/spikes.md S1.2 saw
-    ['policy2', 'policy1']). Anything that read "the first determining policy"
-    would be reading an unspecified ordering; the join makes order irrelevant by
-    construction. That is thesis claim M2, and S2.8 turns it into a property test.
-    """
-    return min(advice, key=ADVICE_LATTICE.index)
+#: Re-exported so callers do not reach past the engine for the common cases.
+DEFAULT_ADVICE = ag_advice.DEFAULT
+ADVICE_LATTICE = list(ag_advice.LATTICE)
+join = ag_advice.join
 
 
 # ----------------------------------------------------------- policy bundle
@@ -201,6 +192,9 @@ class CedarVerdict:
     #: What materialisation produced, kept so the bench and the tests can see
     #: the evidence a decision was made on rather than re-deriving it.
     materialisation: Optional[ag_request.Materialisation] = None
+    #: How the determining policies were reduced to one outcome (S2.4). Carries
+    #: the substitution, and the note when the outcome was not simply the join.
+    resolution: Optional[ag_advice.Resolution] = None
 
 
 def _describe(bundle: PolicyBundle, policy_ids, advice: str, errors) -> str:
@@ -253,17 +247,27 @@ def decide(bundle: PolicyBundle, state: RuleState,
                             raw=_describe(bundle, policy_ids, advice, errors))
 
     if result.decision == Decision.Allow:
-        return CedarVerdict(id="__allow__", raw="", advice="allow",
+        return CedarVerdict(id="__allow__", raw="", advice=ag_advice.ALLOW,
                             decision="Allow", policy_ids=policy_ids,
-                            materialisation=material)
+                            materialisation=material,
+                            resolution=ag_advice.resolve(True, ()))
 
-    advice = join([bundle.advice_for(pid) for pid in policy_ids] or [DEFAULT_ADVICE])
-    determining = [pid for pid in policy_ids if bundle.advice_for(pid) == advice]
+    resolution = ag_advice.resolve(
+        allow=False,
+        contributions=[ag_advice.contribution(pid, bundle.annotations.get(pid, {}))
+                       for pid in policy_ids],
+    )
+    # Name the policies that actually carried the winning outcome, not every one
+    # that denied -- that is what a reader wants to see in "stopped by ...".
+    determining = [c.policy for c in resolution.contributing
+                   if c.advice == resolution.advice] or [c.policy for c in
+                                                         resolution.contributing]
     return CedarVerdict(
-        id=", ".join(bundle.name_for(pid) for pid in determining) or "__deny__",
-        advice=advice, decision="Deny", policy_ids=policy_ids,
-        materialisation=material,
-        raw=_describe(bundle, policy_ids, advice, ()),
+        id=", ".join(determining) or "__deny__",
+        advice=resolution.advice, decision="Deny", policy_ids=policy_ids,
+        materialisation=material, resolution=resolution,
+        raw=_describe(bundle, policy_ids, resolution.advice, ()) +
+            (f"\n  note: {resolution.note}" if resolution.note else ""),
     )
 
 

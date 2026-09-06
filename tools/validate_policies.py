@@ -31,15 +31,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLICY_DIR = os.path.join(REPO_ROOT, "policies")
 SCHEMA_PATH = os.path.join(POLICY_DIR, "schema.cedarschema")
 
-# The enforcement outcomes @advice may name, most restrictive first (thesis
-# §C.4). Cedar validates policy *logic* against the schema but treats every
-# annotation as an opaque string, so nothing but this check stands between a
-# typo'd @advice("stopp") and a crash in the resolver at decision time -- the
-# same shape of silent failure tests/test_fail_open.py records for AgentSpec.
-#
-# S2.4 gives the lattice a real home in agentguard/advice.py; import it from
-# there when it exists rather than keeping two copies.
-ADVICE_LATTICE = ["stop", "user_inspection", "llm_self_reflect", "skip", "allow"]
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+# The single definition of the enforcement vocabulary (S2.4). Cedar validates
+# policy *logic* against the schema but treats every annotation as an opaque
+# string, so nothing but this check stands between a typo'd @advice("stopp") and
+# a wrong outcome at decision time -- the same shape of silent failure
+# tests/test_fail_open.py records for AgentSpec. agentguard.advice is pure
+# Python with no heavy imports, so this stays cheap.
+from agentguard import advice as ag_advice          # noqa: E402
 
 
 def _schema_is_current(path):
@@ -49,7 +50,6 @@ def _schema_is_current(path):
     should keep doing that on a checkout where `agentguard` cannot be imported.
     """
     try:
-        sys.path.insert(0, REPO_ROOT)
         from agentguard import schema as ag_schema      # noqa: PLC0415
     except ImportError:                                 # pragma: no cover
         return True, ""
@@ -72,18 +72,21 @@ def policy_files(paths=None):
 def annotation_errors(text):
     """Lint the annotations Cedar itself will not check.
 
-    Three rules, all about traceability of an enforcement outcome:
+    Four rules, all about a policy meaning what it says:
 
       * every policy carries @id -- diagnostics.reasons returns synthetic ids
         ("policy0", "policy1"), so without @id a decision cannot be attributed
         to anything a human wrote;
-      * @advice, where present, names a real lattice element;
+      * @advice, where present, names a real enforcement outcome;
+      * a substituting policy says what to substitute -- otherwise it resolves
+        to `stop` at decision time and quietly does something other than what
+        it claims;
       * @advice does not appear on a permit, where it would be silently
         ignored (thesis §C.4 rule 1: an Allow resolves to `allow`).
 
     An unannotated `forbid` is allowed: it defaults to `stop`, the safe end of
-    the lattice (docs/spikes.md S1.2). A typo'd one is not, because it would
-    reach the resolver and fail there instead.
+    the lattice (docs/spikes.md S1.2). A typo'd one is not, because the resolver
+    would fail it closed and the author would never learn why.
     """
     parsed = json.loads(policies_to_json_str(text))
     errors = []
@@ -93,10 +96,18 @@ def annotation_errors(text):
         if "id" not in anns:
             errors.append(f"{pid}: no @id -- the decision cannot be traced to a rule")
         advice = anns.get("advice")
-        if advice is not None and advice not in ADVICE_LATTICE:
+        if advice is not None and advice not in ag_advice.VALUES:
             errors.append(
                 f"{name}: @advice(\"{advice}\") is not an enforcement outcome "
-                f"(expected one of {', '.join(ADVICE_LATTICE)})"
+                f"(expected one of {', '.join(ag_advice.VALUES)})"
+            )
+        if advice == ag_advice.SUBSTITUTE and not anns.get(ag_advice.TOOL_ANNOTATION):
+            # A substitution with nothing to substitute resolves to `stop` at
+            # decision time, so the policy would quietly do something other than
+            # what it says. Catch it at load instead.
+            errors.append(
+                f"{name}: @advice(\"{ag_advice.SUBSTITUTE}\") needs "
+                f"@{ag_advice.TOOL_ANNOTATION} naming the replacement tool"
             )
         if advice is not None and body.get("effect") == "permit":
             errors.append(

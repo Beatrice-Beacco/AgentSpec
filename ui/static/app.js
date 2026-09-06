@@ -168,6 +168,10 @@ function renderCedar(c, legacyVerdict) {
 
   const errors = c.errors.length
     ? `<p class="err small">engine errors (failing closed): ${esc(c.errors.join('; '))}</p>` : '';
+  // Only set when the outcome was not simply the lattice join (S2.4).
+  // Distinct from c.note, which carries the failure message when status != ok.
+  const note = c.resolution_note
+    ? `<p class="small" style="margin:6px 0 0"><span class="pill warn">resolution</span> ${esc(c.note)}</p>` : '';
 
   $('cedar').innerHTML = panel(`
     <div class="row" style="gap:14px;align-items:center">
@@ -177,7 +181,7 @@ function renderCedar(c, legacyVerdict) {
         ? 'agrees with the legacy verdict'
         : `differs — legacy said ${esc(legacyVerdict)}`}</span>
     </div>
-    ${errors}
+    ${errors}${note}
     <p class="small" style="margin:10px 0 4px"><b>context.flags</b>
       <span class="muted">— what the Python sensors materialised (${esc(active)})</span></p>
     <div>${flags}</div>
