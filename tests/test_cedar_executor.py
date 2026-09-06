@@ -290,3 +290,56 @@ def test_the_policy_set_is_parsed_once(monkeypatch):
     finally:
         engine.load.cache_clear()
     assert len(calls) == 1
+
+
+# ------------------------------------------------------ configuration (S2.7)
+
+def test_the_policy_directory_is_configurable(monkeypatch, tmp_path):
+    """No hard-coded policy location: a deployment can point somewhere else."""
+    monkeypatch.setenv(agentguard.POLICY_DIR_VAR, str(tmp_path))
+    assert agentguard.policy_dir() == str(tmp_path)
+
+    monkeypatch.delenv(agentguard.POLICY_DIR_VAR, raising=False)
+    assert agentguard.policy_dir() == agentguard.POLICY_DIR
+
+
+def test_the_domain_is_configurable_and_never_inferred(monkeypatch):
+    """An embodied agent calling a code-shaped tool is still embodied, so the
+    domain is configuration and not something to sniff from the action."""
+    from agentguard import sensors                            # noqa: PLC0415
+
+    monkeypatch.setenv(agentguard.DOMAIN_VAR, sensors.EMBODIED)
+    assert agentguard.domain(default=sensors.CODE) == sensors.EMBODIED
+
+    monkeypatch.delenv(agentguard.DOMAIN_VAR, raising=False)
+    assert agentguard.domain(default=sensors.CODE) == sensors.CODE
+
+
+def test_configuration_is_what_the_executor_loads_with(monkeypatch, tmp_path):
+    monkeypatch.setenv(agentguard.POLICY_DIR_VAR, str(tmp_path))
+    assert ag.configuration() == (str(tmp_path), ag.DOMAIN)
+
+
+def test_a_baseline_only_policy_set_guards_nothing(cedar_env, baseline_policy_dir,
+                                                   agent_factory, tool_calls):
+    """The Cedar translation of AgentSpec's "no rules loaded".
+
+    Not the same interface -- policy is ambient here, so the guarded code cannot
+    choose to be unguarded -- but the same deployment, and it must behave the
+    same way.
+    """
+    agent = agent_factory([], react_script(DESTRUCTIVE_INPUT))
+    result = agent.invoke("Delete the unimportant txt file")
+
+    assert tool_calls == [DESTRUCTIVE_INPUT]
+    assert result["output"] == "done"
+
+
+def test_the_shipped_policy_set_still_guards_the_same_action(cedar_env, agent_factory,
+                                                             tool_calls):
+    """The other half: swap the policy set back and the guard returns."""
+    agent = agent_factory([], react_script(DESTRUCTIVE_INPUT))
+    result = agent.invoke("Delete the unimportant txt file")
+
+    assert tool_calls == []
+    assert "stopped by" in result["output"]

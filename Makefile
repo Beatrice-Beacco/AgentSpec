@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 427 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 432 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -42,9 +42,8 @@ schema:  ## regenerate policies/schema.cedarschema from the sensor registry
 golden:  ## regenerate the S2.3 golden request (review the diff!)
 	@$(PY) tests/golden_request.py
 
-test-cedar: $(PYTEST)  ## force the whole suite onto the Cedar engine (S2.7 target)
-	@AGENTGUARD=cedar $(PYTEST) -q; \
-	echo "expect 11 failures until S2.7 -- legacy-rule tests the two-policy set cannot cover"
+test-cedar: $(PYTEST)  ## run the whole suite on the Cedar engine (parity, S2.7)
+	@AGENTGUARD=cedar $(PYTEST) -q -rs
 
 validate:  ## check the schema is current and every policy validates
 	@$(PY) tools/validate_policies.py

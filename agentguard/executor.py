@@ -32,6 +32,7 @@ Run the suite through it with:
 
     AGENTGUARD=cedar .venv/bin/pytest -q tests/test_cedar_executor.py
 """
+import agentguard
 import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
@@ -56,9 +57,15 @@ decide = ag_engine.decide
 # longer names sensors at all: it asks for a domain, and the registry's metadata
 # decides what can safely run there.
 
-#: Which agent binding this executor guards. Only `code` is wired up; an
-#: embodied or shell binding sets its own. Nothing infers it from the action.
+#: Which agent binding this executor guards, unless $AGENTGUARD_DOMAIN says
+#: otherwise. Only `code` is wired up; an embodied or shell binding sets its own.
+#: Nothing infers it from the action -- see agentguard.domain.
 DOMAIN = ag_request.DEFAULT_DOMAIN
+
+
+def configuration():
+    """(policy directory, domain) for this process. Read at construction."""
+    return agentguard.policy_dir(), agentguard.domain(default=DOMAIN)
 
 
 # --------------------------------------------------------------- advice
@@ -82,7 +89,7 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
     def from_agent_and_tools(cls, agent, tools, rules, callbacks=None, **kwargs):
         # Load eagerly: a policy set that does not validate must stop the agent
         # being built, not surface on the first dangerous action.
-        load_bundle(domain=DOMAIN)
+        load_bundle(*configuration())
         return super().from_agent_and_tools(agent, tools, rules, callbacks, **kwargs)
 
     def validate_and_enforce(self, action: Action, state: RuleState, _redirects=0):
@@ -94,7 +101,7 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
             return None, action
 
         profiling.count_rule()
-        verdict = decide(load_bundle(domain=DOMAIN), state)
+        verdict = decide(load_bundle(*configuration()), state)
         if verdict.allowed:
             return None, action
 

@@ -13,7 +13,9 @@ Ported from smoke_test.py (S0.8).
 """
 import pytest
 
-from conftest import BENIGN_INPUT, DESTRUCTIVE_INPUT, TOOL_NAME, react_script, show
+import agentguard
+from conftest import (BENIGN_INPUT, DESTRUCTIVE_INPUT, TOOL_NAME,
+                      react_script, show)
 from rule import Rule
 
 
@@ -58,10 +60,21 @@ def test_benign_action_is_allowed(agent_factory, tool_calls):
     assert result["output"] == "42"
 
 
-def test_no_rules_means_no_interference(agent_factory, tool_calls):
-    """Baseline: with an empty rule set the executor is a plain AgentExecutor."""
-    agent = agent_factory([], react_script(DESTRUCTIVE_INPUT))
+def test_no_rules_means_no_interference(agent_factory, tool_calls, request):
+    """A guard configured to guard nothing must not interfere.
 
+    Engine-agnostic, but the two express "nothing" differently, and the
+    difference is the point. AgentSpec takes its rules as a constructor
+    argument, so an empty list is the whole of it. AgentGuard reads its policy
+    set from the environment -- deliberately, so the guarded code cannot choose
+    to be unguarded -- and the equivalent is a policy set holding only the
+    baseline permit. It refuses an *empty* one, because an engine with no
+    policies allows everything and that is not a state worth starting in.
+    """
+    if agentguard.enabled():
+        request.getfixturevalue("baseline_policy_dir")
+
+    agent = agent_factory([], react_script(DESTRUCTIVE_INPUT))
     result = agent.invoke("Delete the unimportant txt file")
     show(result, tool_calls)
 
@@ -71,6 +84,8 @@ def test_no_rules_means_no_interference(agent_factory, tool_calls):
 
 # ---------------------------------------------------------- enforcement modes
 
+@pytest.mark.legacy_only(
+    "asserts the enforcement an AgentSpec rule names; needs S3.3 to compile it")
 def test_enforce_stop_ends_the_run(agent_factory, tool_calls):
     """`stop` -> the tool is skipped and the whole run terminates immediately."""
     agent = agent_factory(
@@ -85,6 +100,8 @@ def test_enforce_stop_ends_the_run(agent_factory, tool_calls):
     assert result["intermediate_steps"] == [], "stop must not leave a step behind"
 
 
+@pytest.mark.legacy_only(
+    "asserts the enforcement an AgentSpec rule names; needs S3.3 to compile it")
 def test_enforce_skip_drops_the_action_but_continues(agent_factory, tool_calls):
     """`skip` -> the tool is not reached, but the agent keeps planning.
 
@@ -106,6 +123,8 @@ def test_enforce_skip_drops_the_action_but_continues(agent_factory, tool_calls):
     assert result["output"] == "42", "the run continued to a normal answer"
 
 
+@pytest.mark.legacy_only(
+    "asserts the enforcement an AgentSpec rule names; needs S3.3 to compile it")
 def test_enforce_none_lets_the_action_through(agent_factory, tool_calls):
     """`none` -> the rule fires but chooses not to intervene.
 
@@ -123,6 +142,8 @@ def test_enforce_none_lets_the_action_through(agent_factory, tool_calls):
     assert result["output"] == "42"
 
 
+@pytest.mark.legacy_only(
+    "asserts order dependence, which Cedar removes by construction")
 def test_first_matching_rule_decides(agent_factory, tool_calls):
     """Rules are evaluated in list order and the first non-CONTINUE result wins.
 
