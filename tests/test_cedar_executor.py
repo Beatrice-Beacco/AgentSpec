@@ -275,16 +275,18 @@ def test_every_advice_maps_onto_an_enforcement_class():
 def test_the_policy_set_is_parsed_once(monkeypatch):
     """S1.4's finding, enforced: re-parsing per decision costs 2x and is the
     mistake AgentSpec makes on every action (S0.11, 77.6% of guard time)."""
-    ag.load_bundle.cache_clear()
+    from agentguard import engine                          # noqa: PLC0415
+
+    engine.load.cache_clear()
     calls = []
-    real = ag.PolicySet.from_str
-    monkeypatch.setattr(ag.PolicySet, "from_str",
+    real = engine.PolicySet.from_str
+    monkeypatch.setattr(engine.PolicySet, "from_str",
                         staticmethod(lambda text: calls.append(1) or real(text)))
     try:
         for _ in range(3):
-            bundle = ag.load_bundle()
+            bundle = engine.load()
             _action, state = state_for(DESTRUCTIVE_INPUT)
-            ag.decide(bundle, state)
+            engine.decide(bundle, state)
     finally:
-        ag.load_bundle.cache_clear()
+        engine.load.cache_clear()
     assert len(calls) == 1

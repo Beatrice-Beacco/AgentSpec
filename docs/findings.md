@@ -184,6 +184,63 @@ With `name?: Bool`, Cedar instead **refuses to validate an unguarded access**
 `context.flags has X && context.flags.X` and the three states stay distinct:
 fired / ran-and-said-no / never-ran.
 
+### The `has` guard reopens the typo hole the record schema closed — S2.5
+
+**A correction to what S2.2 claimed.** S2.2 reported that a misspelled flag is
+now rejected by name at load. That is true only of an *unguarded* access, and
+Cedar will not accept an unguarded access to an optional attribute at all:
+
+| policy | validates? |
+|---|---|
+| `context.flags.destuctive_os_inzt` | **no** — "attribute `flags.destuctive_os_inzt` not found" |
+| `context.flags has destuctive_os_inzt && context.flags.destuctive_os_inzt` | **yes** |
+| `context.flags.destuctive_os_inst` (correct, unguarded) | **no** — "unable to guarantee safety of access" |
+
+`has` is well typed for *any* attribute name — asking whether a record has an
+attribute is a legitimate question even when it statically cannot — so the guard
+swallows the typo. And the guarded form is the only one Cedar accepts for an
+optional attribute. **The idiom S2.2 mandates is exactly the one that defeats the
+check S2.2 added.**
+
+Two features that are each individually right compose into a hole. Worth stating
+plainly in the write-up, because it is the kind of interaction a paper that only
+reasons about Cedar's type system on paper would miss.
+
+What actually closes it is the engine's **coverage check** (S2.5): every flag a
+policy reads must be one the configured domain's sensors will materialise.
+That check is not something Cedar can do — the schema legitimately declares all
+36 registered sensors, and only the engine knows which subset it will run.
+
+Reproduce: `tests/test_fail_closed.py::test_a_guarded_typo_passes_cedars_own_validator`
+and the test immediately after it.
+
+### RQ6, answered — S2.5
+
+The four ways an AgentSpec rule loads cleanly and then does the wrong thing
+(S0.12), against `agentguard.engine.load()`:
+
+| # | mode | AgentSpec | AgentGuard |
+|---|---|---|---|
+| 1 | malformed source | accepted at load; `ValueError` mid-run | refused at load, naming the token |
+| 2 | silent truncation | `trigger Gmail.SendMail` arms on `Gmail` | no truncation — the tool is a quoted uid |
+| 3 | comment breaks the parse | depends on the comment's **word count** | comments are comments |
+| 4 | name no predicate provides | accepted; `KeyError` mid-run | refused at load |
+
+Mode 4 needs the coverage check, per the finding above; Cedar's own validator
+does not catch it.
+
+**The S0.12 xfails do not flip, and should not.** They assert on
+`Rule.from_text`, so the only way to make them pass is to patch `src/rule.py` —
+after which every comparison in the thesis would be against a baseline we had
+repaired rather than against AgentSpec. They stay as the record of the baseline;
+`tests/test_fail_closed.py` is the answer to RQ6.
+
+One more asymmetry worth reporting honestly: AgentGuard refuses to start with
+**no policy files at all**, because an engine with no policies allows
+everything. AgentSpec starts happily with an empty rule list — and that is not a
+bug in AgentSpec, it is a different notion of where policy lives (see the
+example-3 disagreement at S1.8). S2.7 has to choose one deliberately.
+
 ### Sensor cost is dominated by input size, not sensor count — S2.3
 
 Running the whole code domain (25 sensors) against one sensor:

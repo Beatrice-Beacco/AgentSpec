@@ -11,10 +11,18 @@ fed back to the agent) is reused unchanged, so a verdict difference between the
 two engines is a difference in *deciding*, not in plumbing. That is what makes
 the S1.7 parity test meaningful.
 
-Sensors, request building and the entity store live in agentguard/request.py
-(S2.3); the registry they are selected from is agentguard/sensors.py (S2.1).
-What is left here is loading the policy set, asking Cedar, and mapping the
-answer onto AgentSpec's enforcement classes.
+This module is now only the LangChain binding. Deciding lives elsewhere:
+
+    agentguard/sensors.py   the predicate registry              S2.1
+    agentguard/schema.py    the Cedar schema, generated         S2.2
+    agentguard/request.py   RuleState -> (Request, Entities)    S2.3
+    agentguard/advice.py    the lattice and the join            S2.4
+    agentguard/engine.py    load, validate, refuse, decide      S2.5
+
+What is left here is choosing the domain, applying the resolved outcome with
+AgentSpec's own enforcement classes, and phrasing the observation the agent sees
+exactly as the legacy executor phrases it. S2.6 moves the enforcement mapping to
+agentguard/enforcer.py.
 
 One thing is deliberately not general yet: a single hard-coded principal. The
 Session entity that carries taints across steps -- the actual thesis
@@ -24,38 +32,22 @@ Run the suite through it with:
 
     AGENTGUARD=cedar .venv/bin/pytest -q tests/test_cedar_executor.py
 """
-import functools
-import json
-import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
-
-from cedarpy import (Decision, PolicySet, Schema, is_authorized,
-                     policies_to_json_str, validate_policies)
-
-import agentguard
 import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
 from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
 from agentguard import advice as ag_advice
+from agentguard import engine as ag_engine
 from agentguard import request as ag_request
-from agentguard import schema as ag_schema
 from state import RuleState
 
-NAMESPACE = "AgentGuard"
-AGENT_ID = "agent"
-FRAMEWORK = "langchain"
-
-
-class PolicyError(RuntimeError):
-    """The policy set could not be loaded or does not validate.
-
-    Raised at agent construction, never mid-run. This is the half of RQ6 the
-    Cedar engine gets for free: `tests/test_fail_open.py` records four ways a
-    malformed AgentSpec rule gets past loading and surfaces later or not at all.
-    S2.5 widens this to the whole engine and flips those xfails.
-    """
+# Re-exported so callers and tests have one obvious import per concept while
+# the package settles. The definitions live in the modules named above.
+PolicyError = ag_engine.PolicyError
+PolicyBundle = ag_engine.PolicyBundle
+CedarVerdict = ag_engine.Verdict
+load_bundle = ag_engine.load
+decide = ag_engine.decide
 
 
 # ---------------------------------------------------------------- sensors
@@ -92,185 +84,6 @@ ADVICE_LATTICE = list(ag_advice.LATTICE)
 join = ag_advice.join
 
 
-# ----------------------------------------------------------- policy bundle
-# S2.5 moves this to agentguard/engine.py.
-
-
-@dataclass(frozen=True)
-class PolicyBundle:
-    """Everything loaded from `policies/`, parsed exactly once.
-
-    S1.4 measured the cost of not doing this: passing policy *text* to every
-    `is_authorized` call is 2x slower than passing a pre-parsed `PolicySet`
-    (0.1196 ms vs 0.0579 ms). It is also the mistake AgentSpec makes -- 77.6% of
-    its guard time is re-parsing rule text on every action (S0.11) -- so making
-    it here would throw away the clearest RQ5 result available.
-    """
-    text: str
-    policy_set: Any
-    schema: Any
-    #: Which shape context.flags takes, read out of the generated schema itself
-    #: (S2.2) so the request builder cannot disagree with the type it is
-    #: checked against.
-    flags_variant: str = ag_schema.DEFAULT_VARIANT
-    annotations: Dict[str, Dict[str, str]] = field(default_factory=dict)
-
-    def advice_for(self, policy_id: str) -> str:
-        return self.annotations.get(policy_id, {}).get("advice", DEFAULT_ADVICE)
-
-    def name_for(self, policy_id: str) -> str:
-        return self.annotations.get(policy_id, {}).get("id", policy_id)
-
-    def source_for(self, policy_id: str) -> Optional[str]:
-        return self.annotations.get(policy_id, {}).get("source")
-
-
-@functools.lru_cache(maxsize=None)
-def load_bundle(policy_dir: Optional[str] = None) -> PolicyBundle:
-    """Load, validate and parse the policy set. Cached; call `.cache_clear()` to reload.
-
-    Validation happens here rather than at first decision on purpose: a policy
-    set that does not type-check must stop the agent from *starting*, not
-    produce a surprise halfway through a run.
-    """
-    policy_dir = policy_dir or agentguard.POLICY_DIR
-    schema_path = os.path.join(policy_dir, "schema.cedarschema")
-    policy_paths = sorted(
-        os.path.join(policy_dir, name)
-        for name in os.listdir(policy_dir) if name.endswith(".cedar")
-    )
-    if not policy_paths:
-        raise PolicyError(f"no .cedar policy files in {policy_dir}")
-
-    def read(path):
-        with open(path, encoding="utf-8") as handle:
-            return handle.read()
-
-    schema_text = read(schema_path)
-    schema = Schema.from_str(schema_text)
-    # Read the flags variant out of the schema itself rather than configuring it
-    # separately, so the request builder and the type it is checked against
-    # cannot drift apart (S2.2).
-    flags_variant = ag_schema.variant_of(schema_text)
-    text = "\n".join(read(path) for path in policy_paths)
-
-    result = validate_policies(text, schema)
-    if not result.validation_passed:
-        detail = "\n  ".join(str(e).split("] ", 1)[-1] for e in result.errors)
-        raise PolicyError(f"policy set does not validate against {schema_path}:\n  {detail}")
-
-    # Annotations come from cedarpy's own parser, keyed by the same synthetic
-    # ids diagnostics.reasons returns, so the join at decision time is direct
-    # (docs/spikes.md S1.2 -- id_annotations_by_reason carries only @id).
-    parsed = json.loads(policies_to_json_str(text))
-    annotations = {pid: body.get("annotations", {})
-                   for pid, body in parsed["staticPolicies"].items()}
-
-    return PolicyBundle(text=text, policy_set=PolicySet.from_str(text),
-                        schema=schema, flags_variant=flags_variant,
-                        annotations=annotations)
-
-
-# --------------------------------------------------------------- decision
-
-
-@dataclass(frozen=True)
-class CedarVerdict:
-    """What the legacy engine calls "the rule that fired".
-
-    `id` and `raw` exist because ControlledAgentExecutor._iter_next_step reads
-    them off whatever validate_and_enforce returns -- `raw` ends up in the text
-    the agent is shown when its action is stopped or skipped. Keeping the same
-    duck type means the executor's own code needs no changes at all.
-    """
-    id: str
-    raw: str
-    advice: str
-    decision: str
-    policy_ids: Tuple[str, ...] = ()
-    errors: Tuple[str, ...] = ()
-    #: What materialisation produced, kept so the bench and the tests can see
-    #: the evidence a decision was made on rather than re-deriving it.
-    materialisation: Optional[ag_request.Materialisation] = None
-    #: How the determining policies were reduced to one outcome (S2.4). Carries
-    #: the substitution, and the note when the outcome was not simply the join.
-    resolution: Optional[ag_advice.Resolution] = None
-
-
-def _describe(bundle: PolicyBundle, policy_ids, advice: str, errors) -> str:
-    lines = []
-    for pid in policy_ids:
-        source = bundle.source_for(pid)
-        lines.append(f"  @{bundle.name_for(pid)} -> {bundle.advice_for(pid)}"
-                     + (f"  [{source}]" if source else ""))
-    for message in errors:
-        lines.append(f"  engine error: {message}")
-    return f"cedar policy set (advice: {advice})\n" + "\n".join(lines)
-
-
-def decide(bundle: PolicyBundle, state: RuleState,
-           domain: str = None) -> CedarVerdict:
-    """Materialise, ask Cedar, resolve one enforcement outcome."""
-    with profiling.phase("predicate_eval"):
-        material = ag_request.materialise(state, bundle.flags_variant,
-                                          domain or DOMAIN)
-
-    # A sensor that raised means we do not know what the action is doing.
-    # Deciding anyway would be deciding on evidence we failed to gather, and
-    # the missing flag reads to Cedar as "not evaluated" -- so any policy keyed
-    # on it silently cannot fire. Stop instead, before asking.
-    if material.errors:
-        messages = tuple(str(failure) for failure in material.errors)
-        return CedarVerdict(id="__sensor_error__", advice=DEFAULT_ADVICE,
-                            decision="NotEvaluated", errors=messages,
-                            materialisation=material,
-                            raw=_describe(bundle, (), DEFAULT_ADVICE, messages))
-
-    # S2.9 adds a `cedar_decide` phase to src/profiling.py. Until then the
-    # decision itself is unmeasured, so guard_ms under-reports for this engine
-    # -- don't quote a Cedar guard total from a profile run before S2.9.
-    result = is_authorized(material.request, bundle.policy_set,
-                           material.entities, bundle.schema)
-
-    errors = tuple(str(e) for e in result.diagnostics.errors)
-    policy_ids = tuple(result.diagnostics.reasons)
-
-    # Fail closed. Cedar returns NoDecision -- not an exception -- when it
-    # cannot evaluate the request at all (a malformed entity store does this).
-    # Treating "not Deny" as permission would turn an engine fault into a
-    # silent allow, which is the failure mode this whole project is about.
-    if errors or result.decision not in (Decision.Allow, Decision.Deny):
-        advice = DEFAULT_ADVICE
-        return CedarVerdict(id="__engine_error__", advice=advice,
-                            decision=str(result.decision), policy_ids=policy_ids,
-                            errors=errors, materialisation=material,
-                            raw=_describe(bundle, policy_ids, advice, errors))
-
-    if result.decision == Decision.Allow:
-        return CedarVerdict(id="__allow__", raw="", advice=ag_advice.ALLOW,
-                            decision="Allow", policy_ids=policy_ids,
-                            materialisation=material,
-                            resolution=ag_advice.resolve(True, ()))
-
-    resolution = ag_advice.resolve(
-        allow=False,
-        contributions=[ag_advice.contribution(pid, bundle.annotations.get(pid, {}))
-                       for pid in policy_ids],
-    )
-    # Name the policies that actually carried the winning outcome, not every one
-    # that denied -- that is what a reader wants to see in "stopped by ...".
-    determining = [c.policy for c in resolution.contributing
-                   if c.advice == resolution.advice] or [c.policy for c in
-                                                         resolution.contributing]
-    return CedarVerdict(
-        id=", ".join(determining) or "__deny__",
-        advice=resolution.advice, decision="Deny", policy_ids=policy_ids,
-        materialisation=material, resolution=resolution,
-        raw=_describe(bundle, policy_ids, resolution.advice, ()) +
-            (f"\n  note: {resolution.note}" if resolution.note else ""),
-    )
-
-
 # --------------------------------------------------------------- executor
 
 
@@ -281,7 +94,7 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
     def from_agent_and_tools(cls, agent, tools, rules, callbacks=None, **kwargs):
         # Load eagerly: a policy set that does not validate must stop the agent
         # being built, not surface on the first dangerous action.
-        load_bundle()
+        load_bundle(domain=DOMAIN)
         return super().from_agent_and_tools(agent, tools, rules, callbacks, **kwargs)
 
     def validate_and_enforce(self, action: Action, state: RuleState):
@@ -293,8 +106,8 @@ class CedarControlledAgentExecutor(ControlledAgentExecutor):
             return None, action
 
         profiling.count_rule()
-        verdict = decide(load_bundle(), state)
-        if verdict.advice == "allow":
+        verdict = decide(load_bundle(domain=DOMAIN), state)
+        if verdict.allowed:
             return None, action
 
         enforcement = ENFORCEMENT_TO_CLASS[ADVICE_TO_ENFORCEMENT[verdict.advice]]

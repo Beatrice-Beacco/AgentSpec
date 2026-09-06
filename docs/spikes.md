@@ -142,6 +142,11 @@ evaluated, and Cedar then *refuses to validate* an unguarded access
 `context.flags has X && context.flags.X` and cannot conflate the two. The
 verbosity is the honesty. See `tests/test_schema_codegen.py`.
 
+**Corrected at S2.5:** the record schema catches a misspelled flag only in an
+*unguarded* access, and Cedar accepts no unguarded access to an optional
+attribute — so the guard idiom it mandates defeats the typo check. The hole is
+closed by the engine's coverage check instead; see `docs/findings.md`.
+
 ---
 
 ## S1.4 — how fast is a decision? ✅
