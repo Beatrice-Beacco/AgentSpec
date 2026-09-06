@@ -257,7 +257,7 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
                       user_input=user_input)
 
     try:
-        flags = ag.run_sensors(state)
+        evaluated = ag.run_sensors(state)
         verdict = ag.decide(bundle, state)
     except Exception as exc:                               # noqa: BLE001
         return {"status": "error", "note": f"{type(exc).__name__}: {exc}"}
@@ -267,8 +267,13 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
         "decision": verdict.decision,
         "advice": verdict.advice,
         "verdict": ADVICE_VERDICT.get(verdict.advice, verdict.advice.upper()),
-        "flags": list(flags),
+        # Under the record schema (S2.2) "fired" and "ran" are different
+        # facts, and the panel shows both: a sensor that ran and said no is
+        # evidence, a sensor that never ran is a gap.
+        "flags": ag.fired(evaluated),
+        "evaluated": sorted(evaluated),
         "sensors": sorted(ag.ACTIVE_SENSORS),
+        "variant": bundle.flags_variant,
         # 36 are registered (S2.1); this engine runs the ones a policy
         # actually reads. Showing both keeps the S2.3 gap visible.
         "registered": len(sensor_registry.SENSORS),
@@ -280,7 +285,8 @@ def cedar_decision(user_input, tool_name, tool_input, intermediate_steps=None):
              "source": bundle.source_for(pid)}
             for pid in verdict.policy_ids
         ],
-        "request": ag.build_request(tool_name, flags),
+        "request": ag.build_request(tool_name, evaluated,
+                                    bundle.flags_variant),
         "entities": ag.build_entities(tool_name),
     }
 

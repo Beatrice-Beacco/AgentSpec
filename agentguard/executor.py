@@ -37,6 +37,7 @@ import profiling
 from agent import Action
 from controlled_agent_excector import ControlledAgentExecutor
 from enforcement import ENFORCEMENT_TO_CLASS, EnforceResult
+from agentguard import schema as ag_schema
 from agentguard import sensors as sensor_registry
 from state import RuleState
 
@@ -78,13 +79,19 @@ def sensors():
     return {name: sensor_registry.get(name) for name in ACTIVE_SENSORS}
 
 
-def run_sensors(state: RuleState) -> List[str]:
-    """Evaluate every active sensor over the proposed action; return what fired.
+def run_sensors(state: RuleState) -> Dict[str, bool]:
+    """Evaluate every active sensor; return {flag: value} for the ones that ran.
 
     This is the impure half of the architecture and the only place arbitrary
     Python runs. Cedar expressions are pure and total, so a regex like
     `destuctive_os_inst` can never live inside a policy -- it runs here and
-    arrives as a member of `context.flags`.
+    arrives in `context.flags`.
+
+    The return is a map and not a list of names that fired, because under the
+    record schema (S2.2) those are different facts: a flag present and `false`
+    means the sensor ran and said no; a flag *absent* means nobody looked. Cedar
+    forces a policy to distinguish them, so the request has to carry the
+    distinction.
 
     Exceptions are *not* caught; see sensors.evaluate for why.
     """
@@ -93,14 +100,20 @@ def run_sensors(state: RuleState) -> List[str]:
         # AgentFinish carries no tool input. The predicates all index into a
         # string, so there is nothing to sense (and `action finish` is not in
         # the schema until S2.7).
-        return []
+        return {}
     text = tool_input if isinstance(tool_input, str) else str(tool_input)
-    fired = []
+    evaluated = {}
     for sensor in sensors().values():
-        if sensor_registry.evaluate(sensor, state.user_input, text,
-                                    state.intermediate_steps):
-            fired.extend(sensor.flags)
-    return sorted(set(fired))
+        value = sensor_registry.evaluate(sensor, state.user_input, text,
+                                         state.intermediate_steps)
+        for flag in sensor.flags:
+            evaluated[flag] = value
+    return evaluated
+
+
+def fired(evaluated: Dict[str, bool]) -> List[str]:
+    """Just the flags that came back true, sorted. For display and the set variant."""
+    return sorted(flag for flag, value in evaluated.items() if value)
 
 
 # ---------------------------------------------------------------- advice
@@ -154,6 +167,10 @@ class PolicyBundle:
     text: str
     policy_set: Any
     schema: Any
+    #: Which shape context.flags takes, read out of the generated schema itself
+    #: (S2.2) so the request builder cannot disagree with the type it is
+    #: checked against.
+    flags_variant: str = ag_schema.DEFAULT_VARIANT
     annotations: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
     def advice_for(self, policy_id: str) -> str:
@@ -187,7 +204,12 @@ def load_bundle(policy_dir: Optional[str] = None) -> PolicyBundle:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
 
-    schema = Schema.from_str(read(schema_path))
+    schema_text = read(schema_path)
+    schema = Schema.from_str(schema_text)
+    # Read the flags variant out of the schema itself rather than configuring it
+    # separately, so the request builder and the type it is checked against
+    # cannot drift apart (S2.2).
+    flags_variant = ag_schema.variant_of(schema_text)
     text = "\n".join(read(path) for path in policy_paths)
 
     result = validate_policies(text, schema)
@@ -203,12 +225,13 @@ def load_bundle(policy_dir: Optional[str] = None) -> PolicyBundle:
                    for pid, body in parsed["staticPolicies"].items()}
 
     return PolicyBundle(text=text, policy_set=PolicySet.from_str(text),
-                        schema=schema, annotations=annotations)
+                        schema=schema, flags_variant=flags_variant,
+                        annotations=annotations)
 
 
 # ---------------------------------------------------------------- request
 # S2.3 moves this to agentguard/request.py, where the entity store also grows
-# a Session (S4.2) and the context grows targets/risk/step (S2.2).
+# a Session (S4.2) and the context grows targets/risk/step (S4.2).
 
 
 def _literal(value: str) -> str:
@@ -224,12 +247,31 @@ def _literal(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def build_request(tool_name: str, flags) -> Dict[str, Any]:
+def build_context_flags(evaluated: Dict[str, bool], variant: str):
+    """Shape the sensor results the way the schema on disk declares them.
+
+    The variant comes from the generated schema rather than a setting of our
+    own, so the request and the type it is checked against cannot disagree.
+
+      record   {flag: bool} for every sensor that ran. Absent means not run,
+               and Cedar makes a policy say which of the two it means.
+      set      [flag, ...] for the ones that fired. Cannot express "ran and
+               said no" at all -- which is the point of the comparison.
+    """
+    if variant == ag_schema.RECORD:
+        return dict(evaluated)
+    if variant == ag_schema.SET:
+        return fired(evaluated)
+    raise PolicyError(f"schema declares an unknown flags variant {variant!r}")
+
+
+def build_request(tool_name: str, evaluated: Dict[str, bool],
+                  variant: str = ag_schema.DEFAULT_VARIANT) -> Dict[str, Any]:
     return {
         "principal": f'{NAMESPACE}::Agent::"{AGENT_ID}"',
         "action": f'{NAMESPACE}::Action::"invoke"',
         "resource": f'{NAMESPACE}::Tool::"{_literal(tool_name)}"',
-        "context": {"flags": list(flags)},
+        "context": {"flags": build_context_flags(evaluated, variant)},
     }
 
 
@@ -283,14 +325,15 @@ def _describe(bundle: PolicyBundle, policy_ids, advice: str, errors) -> str:
 def decide(bundle: PolicyBundle, state: RuleState) -> CedarVerdict:
     """Run the sensors, ask Cedar, resolve one enforcement outcome."""
     with profiling.phase("predicate_eval"):
-        flags = run_sensors(state)
+        evaluated = run_sensors(state)
 
     tool_name = state.action.name
     # S2.9 adds a `cedar_decide` phase to src/profiling.py. Until then the
     # decision itself is unmeasured, so guard_ms under-reports for this engine
     # -- don't quote a Cedar guard total from a profile run before S2.9.
-    result = is_authorized(build_request(tool_name, flags), bundle.policy_set,
-                           build_entities(tool_name), bundle.schema)
+    result = is_authorized(
+        build_request(tool_name, evaluated, bundle.flags_variant),
+        bundle.policy_set, build_entities(tool_name), bundle.schema)
 
     errors = tuple(str(e) for e in result.diagnostics.errors)
     policy_ids = tuple(result.diagnostics.reasons)

@@ -38,6 +38,13 @@ permit (
 // the architecture (thesis M1); this policy is the smallest thing that depends
 // on it.
 //
+// The `has` guard is not boilerplate and not optional -- Cedar refuses to
+// validate the access without it (S2.2). context.flags carries only the sensors
+// that actually ran, so the guard is what separates "the sensor ran and said
+// no" from "nobody looked". Writing just `context.flags.destuctive_os_inst`
+// fails validation with "unable to guarantee safety of access", at load, before
+// the agent starts.
+//
 // @advice carries the enforcement outcome, because Cedar only answers
 // Allow/Deny and AgentSpec has five outcomes. It is read back off the
 // determining policies via policies_to_json_str() -- see docs/spikes.md S1.2 for
@@ -62,4 +69,7 @@ forbid (
   action   == AgentGuard::Action::"invoke",
   resource == AgentGuard::Tool::"python_repl"
 )
-when { context.flags.contains("destuctive_os_inst") };
+when {
+  context.flags has destuctive_os_inst &&
+  context.flags.destuctive_os_inst
+};

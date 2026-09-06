@@ -132,12 +132,18 @@ def test_both_engines_reach_the_same_verdict(tool_input, final, expect_tool,
 
 def test_the_sensor_fires_on_a_destructive_call():
     _action, state = state_for(DESTRUCTIVE_INPUT)
-    assert ag.run_sensors(state) == ["destuctive_os_inst"]
+    assert ag.run_sensors(state) == {"destuctive_os_inst": True}
 
 
 def test_the_sensor_stays_quiet_on_arithmetic():
+    """Present and false -- the sensor ran and said no.
+
+    Not the same as absent, which means nobody looked. Under the record schema
+    (S2.2) Cedar makes a policy distinguish the two, so the request has to.
+    """
     _action, state = state_for(BENIGN_INPUT)
-    assert ag.run_sensors(state) == []
+    assert ag.run_sensors(state) == {"destuctive_os_inst": False}
+    assert ag.fired(ag.run_sensors(state)) == []
 
 
 def test_a_finish_action_has_nothing_to_sense():
@@ -148,13 +154,13 @@ def test_a_finish_action_has_nothing_to_sense():
     """
     finish = Action.get_finish("done", "done")
     state = RuleState(action=finish, agent=None, intermediate_steps=[])
-    assert ag.run_sensors(state) == []
+    assert ag.run_sensors(state) == {}
 
 
 def test_a_dict_tool_input_does_not_crash_the_sensors():
     """Structured tools pass a dict, not a string."""
     _action, state = state_for({"task_id": "1"})
-    assert ag.run_sensors(state) == []
+    assert ag.run_sensors(state) == {"destuctive_os_inst": False}
 
 
 # ------------------------------------------------------------ decisions

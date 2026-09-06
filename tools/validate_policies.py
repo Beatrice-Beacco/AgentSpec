@@ -42,6 +42,20 @@ SCHEMA_PATH = os.path.join(POLICY_DIR, "schema.cedarschema")
 ADVICE_LATTICE = ["stop", "user_inspection", "llm_self_reflect", "skip", "allow"]
 
 
+def _schema_is_current(path):
+    """(ok, reason) -- is the schema still what agentguard/schema.py generates?
+
+    Soft-imported: the validator's core job is checking policy files, and it
+    should keep doing that on a checkout where `agentguard` cannot be imported.
+    """
+    try:
+        sys.path.insert(0, REPO_ROOT)
+        from agentguard import schema as ag_schema      # noqa: PLC0415
+    except ImportError:                                 # pragma: no cover
+        return True, ""
+    return ag_schema.is_current(path)
+
+
 def load_schema(path=SCHEMA_PATH):
     """Parse the schema, or raise with the file's own error text."""
     with open(path, encoding="utf-8") as fh:
@@ -117,7 +131,16 @@ def main(argv=None):
     except Exception as exc:                            # noqa: BLE001
         print(f"FAIL  {rel(args.schema)}\n      {exc}")
         return 1
-    print(f"ok    {rel(args.schema)}  (schema parses)")
+
+    # The schema is generated from the sensor registry (S2.2), so "it parses" is
+    # not enough -- it also has to still be what the registry says. A
+    # hand-edited or stale schema type-checks perfectly and silently omits a
+    # flag, which is a policy that can never fire.
+    current, reason = _schema_is_current(args.schema)
+    if not current:
+        print(f"FAIL  {rel(args.schema)}\n      {reason}")
+        return 1
+    print(f"ok    {rel(args.schema)}  (parses, and matches the sensor registry)")
 
     files = policy_files(args.paths)
     if not files:
