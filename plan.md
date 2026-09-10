@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 2 complete. Next: Sprint 3, Step S3.1 (grammar fixes) — or cut Sprint 3 per the risk table and go straight to Sprint 4.
+**Current position:** Sprint 3, Step S3.2 (fix the `.ar` fixtures / repo unit test).
 
 ---
 
@@ -308,12 +308,23 @@ confirmed. Seven corpus defects are written up in [`docs/findings.md`](docs/find
 
 Goal: bring the existing rule corpus across automatically. **Cuttable if behind.**
 
-- [ ] **S3.1** Fix the grammar defects found in the audit, in `src/spec_lang/AgentSpec.g4`:
-      `//` and `/* */` comments; `&` and `|` in `check`; dotted and multi-word triggers;
-      `IDENTIFIER` predicates instead of the closed 36-alternative token; align
-      `llm_self_examine` / `llm_self_reflect`.
-      ⚠️ Needs Java to regenerate the parser: `cd src && bash run.sh`.
-      *Accept:* `tools/audit_rules.py` reports **0 parse failures** across the corpus.
+- [x] **S3.1** Fix the grammar defects found in the audit ✅ 2026-09-10
+      — **as a second grammar, not by editing the shipped one.**
+      `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses:
+      `//` and `/* */` comments, `&` and `|`, dotted and multi-word triggers, open
+      predicate identifiers, `llm_self_examine`, `user_inspection("...")`, `trigger any`.
+      `src/spec_lang/AgentSpec.g4` is **untouched**, because what it rejects is a
+      measurement — repairing it would make "AgentSpec" mean a version we fixed in
+      every later experiment. Rationale in [`docs/findings.md`](docs/findings.md).
+      Java + the committed ANTLR jar: `make grammar`.
+      *Accept:* ~~0 parse failures~~ → **61 of 62 rules**, `make audit-full`.
+      Two reasons it is not 62, both findings rather than grammar gaps:
+      **D-8** two files contain unmarked prose between rules, so *whole-file* parsing
+      can never be clean; **D-9** one rule's check clause is an English sentence.
+      | grammar | rules parsed |
+      |---|---:|
+      | shipped (untouched) | **18 / 62** |
+      | full (ours) | **61 / 62** |
 - [ ] **S3.2** Fix `src/spec_lang/rule_examples/*.ar` (they use a dead older syntax) so
       the repo's own unit test passes, or replace the fixtures.
       *Accept:* `pytest` + `python -m unittest spec_lang.test_parse` both green.
@@ -502,3 +513,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-06 | S2.8 | M2 measured rather than argued. The same three guards — suppress / halt / pass-through — written once as AgentSpec rules and once as Cedar policies, under all six orderings: **AgentSpec produces 2 distinct verdicts, AgentGuard produces 1** (and 1 across 100 random shuffles). Nothing changes but the order they are listed in, so a reviewer reading an AgentSpec rule file cannot tell what the guard will do without also knowing the order — and neither can a tool, which is what blocks the Sprint 5 analysis for the baseline. Two things make it a real result rather than a tautology: every shuffle goes through `engine.load()` on disk, so Cedar reassigns the synthetic ids **by position** each time and a resolution keyed on them would break; and Cedar still does not return determining policies in source order, re-checked here, so "take the first" was never a defensible design. Also pinned sensor-order independence, which §C.4 claims alongside policy order — it holds now and would stop holding the moment a sensor gained a side effect another could observe. |
 | 2026-09-06 | S2.9 | Cedar profiled, and **two expectations the plan carried since S0.11 did not survive it**. The architectural claim did: `rule_parse` is exactly **0.0%** of AgentGuard's guard against **79.2%** of AgentSpec's. But (1) *"the policy engine is free; detection is the cost"* is **not supported at these input sizes** — detection 0.5104 ms against decision 0.5067 ms, within 1%. The slogan was extrapolated from S1.4's 0.058 ms spike, which used a 1-flag request with no schema and no entity store; on the real request the decision is 0.2341 ms, of which **passing the `Schema` on every call is +0.087 ms — over a third**, the entity store +0.029, and the 24 extra flags +0.039. So the decision cost is dominated by **marshalling across the Python/Rust boundary, not by evaluating policies**, which is both more useful and names an optimisation (hoist the parsed schema). And (2) **AgentGuard's guard total is 2.3× AgentSpec's** — reported plainly, because the cause is our S2.3 choice to materialise the whole domain (25 sensors per step vs the 1–2 AgentSpec names), not a cost Cedar imposes; S2.3 already measured the lever at 25→1. Methodological fix worth keeping: a profiling run builds executors of both kinds, so steps are now tagged with `engine` and the report filters — the first measurement blended them and showed a nonzero `rule_parse` under Cedar. Also pinned the report's output encoding: on Windows the `·` separator was being written as cp1252 and the frozen `.md` was not valid UTF-8. |
 | 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |
+| 2026-09-10 | S3.1 | Took the **second-grammar** route rather than editing `src/spec_lang/AgentSpec.g4`, on the reasoning that the shipped grammar rejecting **44 of the 62 rules in its own repository** is a measurement, and repairing it in place would both erase the finding and make "AgentSpec" mean a version we fixed in every RQ2/RQ3 comparison afterwards. `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses; `tools/audit_rules.py --grammar full|shipped` reports both, and `tests/test_full_grammar.py` asserts in **both directions** — that ours accepts each construct *and that the shipped one still rejects it*, so an edit to the baseline fails a test rather than passing silently. Result **61/62 rules**, not the planned 62: **D-8**, two files carry unmarked prose between rules (`=== below is security-related`, `case 20-23 The23andMe ????`) which is neither comment nor rule, so *whole-file* parsing can never be clean under any grammar without editing the corpus — coverage has to be measured per rule; and **D-9**, `@inspect_side_channel`'s check clause is an English sentence (`resources_that_provide_side_channel_info(e.g. how much time/power ...)`), which we decline to accept because accepting it means accepting prose. 61/62 is therefore the ceiling on S3.4. Also kept multi-word and dotted events apart in the parse tree: `getText()` would render `turn on` as `turnon`, silently mangling the trigger. |

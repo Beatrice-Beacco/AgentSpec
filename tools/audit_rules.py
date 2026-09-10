@@ -3,19 +3,44 @@
 
 Produces the evidence tables in Part B of AgentSpec-Cedar-Thesis-Plan.md.
 
-Usage:
-    pip install "antlr4-python3-runtime==4.13" pydantic
-    python tools/audit_rules.py /path/to/AgentSpec/src
-"""
-import sys, os, re, glob, subprocess, datetime
+Two grammars can be used, and the difference between them is the point:
 
-SRC = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "AgentSpec/src")
+    --grammar shipped   src/spec_lang/AgentSpec.g4, exactly as AgentSpec ships
+                        it. Rejects 21 of the 42 rules in its own repository.
+    --grammar full      agentguard/speclang/AgentSpecFull.g4, the permissive
+                        grammar our compiler reads the corpus with (S3.1).
+
+The shipped grammar is deliberately never modified: what it rejects is a
+measurement, and repairing it in place would turn that measurement into history.
+
+Usage:
+    python tools/audit_rules.py src
+    python tools/audit_rules.py src --grammar full
+"""
+import sys, os, re, glob, subprocess, datetime, argparse
+
+_parser = argparse.ArgumentParser(description="audit the AgentSpec rule corpus")
+_parser.add_argument("src", nargs="?", default="AgentSpec/src")
+_parser.add_argument("--grammar", choices=("shipped", "full"), default="shipped")
+_args = _parser.parse_args()
+
+SRC = os.path.abspath(_args.src)
+GRAMMAR = _args.grammar
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
+sys.path.insert(0, REPO)
 
 from antlr4 import InputStream, CommonTokenStream
 from antlr4.error.ErrorListener import ErrorListener
-from spec_lang.AgentSpecLexer import AgentSpecLexer
-from spec_lang.AgentSpecParser import AgentSpecParser
+
+if GRAMMAR == "full":
+    from agentguard.speclang.AgentSpecFullLexer import AgentSpecFullLexer as Lexer
+    from agentguard.speclang.AgentSpecFullParser import AgentSpecFullParser as Parser
+    GRAMMAR_PATH = "agentguard/speclang/AgentSpecFull.g4"
+else:
+    from spec_lang.AgentSpecLexer import AgentSpecLexer as Lexer
+    from spec_lang.AgentSpecParser import AgentSpecParser as Parser
+    GRAMMAR_PATH = "src/spec_lang/AgentSpec.g4"
 
 
 class Collect(ErrorListener):
@@ -28,12 +53,12 @@ class Collect(ErrorListener):
 
 def parse(text):
     """Parse rule text; return the list of lexer+parser syntax errors."""
-    lexer = AgentSpecLexer(InputStream(text))
+    lexer = Lexer(InputStream(text))
     lexer.removeErrorListeners()
     lex_errs = Collect()
     lexer.addErrorListener(lex_errs)
 
-    parser = AgentSpecParser(CommonTokenStream(lexer))
+    parser = Parser(CommonTokenStream(lexer))
     parser.removeErrorListeners()
     parse_errs = Collect()
     parser.addErrorListener(parse_errs)
@@ -49,8 +74,8 @@ def audit_files():
     files = sorted(glob.glob(os.path.join(SRC, "rules/**/*.ar"), recursive=True))
     files += sorted(glob.glob(os.path.join(SRC, "rules/**/*.rule"), recursive=True))
     for f in files:
-        rel = os.path.relpath(f, SRC)
-        text = open(f).read()
+        rel = os.path.relpath(f, SRC).replace(os.sep, "/")
+        text = open(f, encoding="utf-8", errors="replace").read()
         if not text.strip():
             print(f"| {rel:45s} | empty |")
             continue
@@ -59,17 +84,44 @@ def audit_files():
         print(f"| {rel:45s} | {result} |")
 
 
+def rule_chunks(text):
+    """Split a rule file into individual rules, the way a compiler sees it.
+
+    Trimming at each rule's own `end` matters: two corpus files carry unmarked
+    prose between rules (`=== below is security-related` in pythonrepl.ar,
+    `case 20-23 The23andMe ????` in toolemu.ar). It is neither comment nor rule,
+    so without the trim it is charged to whichever rule precedes it.
+    """
+    chunks = ["rule @" + c for c in re.sub(r"//.*", "", text).split("rule @")[1:]]
+    return [c[:c.index("\nend") + 4] if "\nend" in c else c for c in chunks]
+
+
 def audit_rules():
+    """Per-rule parse -- what a compiler actually consumes.
+
+    Whole-file parsing (B.1) is stricter and can never reach zero while the
+    stray prose above is in the files. Splitting on `rule @` is how S3.3 reads
+    the corpus, so this is the number that bounds compiler coverage.
+    """
     print("\n## B.1b  Per-rule parse (comments stripped, split on `rule @`)\n")
     print(f"| {'File':45s} | Rules | OK | FAIL |")
     print(f"|{'-'*47}|------:|---:|-----:|")
-    for f in sorted(glob.glob(os.path.join(SRC, "rules/**/*.ar"), recursive=True)):
-        text = open(f).read()
+    files = sorted(glob.glob(os.path.join(SRC, "rules/**/*.ar"), recursive=True))
+    files += sorted(glob.glob(os.path.join(SRC, "rules/**/*.rule"), recursive=True))
+    total = total_ok = 0
+    for f in files:
+        text = open(f, encoding="utf-8", errors="replace").read()
         if not text.strip():
             continue
-        chunks = ["rule @" + c for c in re.sub(r"//.*", "", text).split("rule @")[1:]]
+        chunks = rule_chunks(text)
+        if not chunks:
+            continue
         ok = sum(1 for c in chunks if not parse(c))
-        print(f"| {os.path.relpath(f, SRC):45s} | {len(chunks):5d} | {ok:2d} | {len(chunks)-ok:4d} |")
+        total += len(chunks)
+        total_ok += ok
+        rel = os.path.relpath(f, SRC).replace(os.sep, "/")
+        print(f"| {rel:45s} | {len(chunks):5d} | {ok:2d} | {len(chunks)-ok:4d} |")
+    print(f"| {'**total**':45s} | **{total}** | **{total_ok}** | **{total-total_ok}** |")
 
 
 PROBES = {
@@ -153,12 +205,19 @@ def provenance():
         f"| branch | `{branch}` |",
         f"| source tree | `{os.path.relpath(SRC, repo)}` (clean at this commit) |" if not dirty
         else f"| source tree | `{os.path.relpath(SRC, repo)}` |",
+        f"| grammar | `{GRAMMAR_PATH}` (`--grammar {GRAMMAR}`) |",
         f"| python | {sys.version.split()[0]} |",
         f"| antlr4 runtime | {antlr} |",
         "",
-        "Every table below is produced by parsing the shipped rule files with the",
-        "repo's own generated lexer and parser — the same classes `Rule.from_text`",
-        "uses at runtime. Nothing here is hand-counted.",
+        "Every table below is produced by parsing the shipped rule files with a",
+        "generated ANTLR lexer and parser. Nothing here is hand-counted.",
+        "",
+        ("The **shipped** grammar is the one `Rule.from_text` uses at runtime —\n"
+         "this is AgentSpec exactly as published."
+         if GRAMMAR == "shipped" else
+         "The **full** grammar is ours (S3.1), used only to read the corpus for\n"
+         "compilation. The shipped grammar is left untouched; read this report\n"
+         "against `docs/baseline-audit.md`."),
         "",
     ])
 

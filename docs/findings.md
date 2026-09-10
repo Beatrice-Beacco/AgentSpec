@@ -227,9 +227,103 @@ regression.
 The answer is bounded on the enforcement side as well as the predicate side, and
 `docs/coverage.md` (S3.5) needs both numbers.
 
+## D-8 · Two corpus files contain prose that is neither comment nor rule
+
+*Found 2026-09-10 during S3.1.*
+
+`pythonrepl.ar` line 171 and `toolemu.ar` line 76 carry bare text between rules:
+
+```
+=== below is security-related
+case 20-23 The23andMe ????
+```
+
+Neither is a comment — the shipped grammar has no comment token at all, and even
+a grammar that has one would not skip these, because they are not marked as
+comments. They are editing notes left in a file that is supposed to be source.
+
+**Why it matters.** Whole-file parsing can never reach zero errors on this
+corpus, under any grammar, without editing the corpus. So compiler coverage has
+to be measured **per rule** — splitting on `rule @` and trimming at each rule's
+own `end` — which is how `tools/audit_rules.py` B.1b and S3.3 both read it.
+
+## D-9 · One "rule" is an English sentence
+
+*Found 2026-09-10 during S3.1.*
+
+`@inspect_side_channel` in `pythonrepl.ar`:
+
+```
+check
+    resources_that_provide_side_channel_info(e.g. how much time/power to execute code )
+```
+
+That is a predicate name followed by a parenthesised sentence — `e.g.` has dots,
+`time/power` has a slash. It is the single rule in the corpus that our permissive
+grammar rejects, and rightly: accepting it would mean accepting arbitrary prose.
+
+It is the ceiling on S3.4. **61 of 62 rules can be compiled; the 62nd was never
+written in the language.**
+
 ---
 
 ## Observations on the design (not corpus defects)
+
+### Two grammars, and why the shipped one is not repaired — S3.1
+
+The plan's S3.1 says to fix `src/spec_lang/AgentSpec.g4` in place. We did not,
+and the reasoning is worth stating because it shapes what every later number
+means.
+
+The shipped grammar rejects **44 of the 62 rules in its own repository**.
+Repairing it in place would:
+
+* turn that measurement into history — the finding only exists while the
+  artifact does;
+* make "AgentSpec" in every RQ2/RQ3 experiment mean *a version we fixed*, which
+  is a baseline nobody ships.
+
+Instead there are two grammars:
+
+| | grammar | corpus rules parsed |
+|---|---|---:|
+| shipped | `src/spec_lang/AgentSpec.g4` — untouched | **18 / 62** |
+| full | `agentguard/speclang/AgentSpecFull.g4` — ours | **61 / 62** |
+
+`tools/audit_rules.py --grammar full|shipped` produces both, and
+`tests/test_full_grammar.py` asserts in both directions: that the full grammar
+accepts every construct the corpus uses, **and that the shipped one still
+rejects them**. If that second assertion ever fails, someone has edited the
+baseline and every "AgentSpec cannot express this" claim needs rechecking.
+
+The counter-argument is real and should be acknowledged in the write-up: a
+baseline whose parser rejects most of its own corpus is a weak opponent, and
+beating it proves less than beating a repaired one. The answer is that the
+repaired version is not the published system, and RQ1 is precisely the question
+*how much of the corpus survives the trip* — which is only meaningful measured
+against what was actually shipped.
+
+What the full grammar adds, and the corpus file that forced each:
+
+| construct | forced by |
+|---|---|
+| `//` and `/* */` comments | all three `.ar` files |
+| `True` / `False` capitalised | `toolemu.ar` |
+| dotted events `Gmail.SendMail` | `toolemu.ar` |
+| alternation `A \| B \| C` | `toolemu.ar` |
+| multi-word events `turn on` | `embodied.ar` |
+| open predicate names | the shipped grammar hard-codes 36 in the *lexer* |
+| `llm_self_examine` | `toolemu.ar`; the shipped token is `llm_self_reflect` |
+| `user_inspection("...")` | `toolemu.ar` |
+| `&` between checks | `apollo/*.rule` |
+| `trigger any` | `ANY` is declared in the shipped grammar and never used |
+
+One design note: the parse tree keeps multi-word and dotted events *apart*
+rather than concatenating. `getText()` on a multi-word trigger would produce
+`turnon`, which is how the shipped runtime would have silently mangled `turn on`
+had it parsed at all.
+
+
 
 ### Cedar fails open unless you make it fail closed — S1.7
 

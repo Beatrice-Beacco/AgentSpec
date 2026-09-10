@@ -4,33 +4,36 @@
 
 | | |
 |---|---|
-| generated | 2026-09-05 |
-| commit | `8718b8fe1abdb711c5208a7a385979888b8f2ca6` |
-| branch | `dev-foued` |
+| generated | 2026-09-10 |
+| commit | `26def6d161c275920ee6af31e2efee1c5693b4ce` |
+| branch | `dev-bea` |
 | source tree | `src` (clean at this commit) |
-| python | 3.12.8 |
+| grammar | `src/spec_lang/AgentSpec.g4` (`--grammar shipped`) |
+| python | 3.12.14 |
 | antlr4 runtime | installed |
 
-Every table below is produced by parsing the shipped rule files with the
-repo's own generated lexer and parser â€” the same classes `Rule.from_text`
-uses at runtime. Nothing here is hand-counted.
+Every table below is produced by parsing the shipped rule files with a
+generated ANTLR lexer and parser. Nothing here is hand-counted.
+
+The **shipped** grammar is the one `Rule.from_text` uses at runtime —
+this is AgentSpec exactly as published.
 
 ## B.1  Whole-file parse
 
 | Rule file                                     | Result |
 |-----------------------------------------------|--------|
 | rules/apollo/plan/s1.ar                       | empty |
-| rules/manual/embodied.ar                      | **9 errors** â€” L30:0 token recognition error at: '/' |
-| rules/manual/pythonrepl.ar                    | **99 errors** â€” L10:0 token recognition error at: '/' |
+| rules/manual/embodied.ar                      | **9 errors** — L30:0 token recognition error at: '/' |
+| rules/manual/pythonrepl.ar                    | **99 errors** — L10:0 token recognition error at: '/' |
 | rules/manual/terminal.ar                      | empty |
-| rules/manual/toolemu.ar                       | **44 errors** â€” L1:0 token recognition error at: '/' |
-| rules/apollo/S1.rule                          | **1 errors** â€” L18:26 token recognition error at: '&' |
-| rules/apollo/S2.rule                          | **2 errors** â€” L5:26 token recognition error at: '&' |
-| rules/apollo/S3.rule                          | **3 errors** â€” L5:26 token recognition error at: '&' |
+| rules/manual/toolemu.ar                       | **44 errors** — L1:0 token recognition error at: '/' |
+| rules/apollo/S1.rule                          | **1 errors** — L18:26 token recognition error at: '&' |
+| rules/apollo/S2.rule                          | **2 errors** — L5:26 token recognition error at: '&' |
+| rules/apollo/S3.rule                          | **3 errors** — L5:26 token recognition error at: '&' |
 | rules/apollo/S4.rule                          | OK |
-| rules/apollo/S5.rule                          | **3 errors** â€” L5:26 token recognition error at: '&' |
-| rules/apollo/S6.rule                          | **3 errors** â€” L5:17 token recognition error at: '&' |
-| rules/apollo/S7.rule                          | **2 errors** â€” L5:20 token recognition error at: '&' |
+| rules/apollo/S5.rule                          | **3 errors** — L5:26 token recognition error at: '&' |
+| rules/apollo/S6.rule                          | **3 errors** — L5:17 token recognition error at: '&' |
+| rules/apollo/S7.rule                          | **2 errors** — L5:20 token recognition error at: '&' |
 | rules/apollo/S8.rule                          | OK |
 | rules/apollo/S9.rule                          | OK |
 
@@ -41,23 +44,33 @@ uses at runtime. Nothing here is hand-counted.
 | rules/manual/embodied.ar                      |     5 |  2 |    3 |
 | rules/manual/pythonrepl.ar                    |    26 | 10 |   16 |
 | rules/manual/toolemu.ar                       |    11 |  0 |   11 |
+| rules/apollo/S1.rule                          |     2 |  1 |    1 |
+| rules/apollo/S2.rule                          |     2 |  0 |    2 |
+| rules/apollo/S3.rule                          |     3 |  0 |    3 |
+| rules/apollo/S4.rule                          |     1 |  1 |    0 |
+| rules/apollo/S5.rule                          |     3 |  0 |    3 |
+| rules/apollo/S6.rule                          |     3 |  0 |    3 |
+| rules/apollo/S7.rule                          |     3 |  1 |    2 |
+| rules/apollo/S8.rule                          |     1 |  1 |    0 |
+| rules/apollo/S9.rule                          |     2 |  2 |    0 |
+| **total**                                     | **62** | **18** | **44** |
 
 ## B.2  Language-feature probes
 
 | Construct                        | Parses? |
 |----------------------------------|---------|
 | baseline (grammar-legal)         | yes |
-| comment line //                  | NO â€” L1:0 token recognition error at: '/' |
-| predicate not in token list      | NO â€” L6:0 mismatched input 'enforce' expecting '(' |
-| capitalised True                 | NO â€” L6:0 mismatched input 'enforce' expecting '(' |
+| comment line //                  | NO — L1:0 token recognition error at: '/' |
+| predicate not in token list      | NO — L6:0 mismatched input 'enforce' expecting '(' |
+| capitalised True                 | NO — L6:0 mismatched input 'enforce' expecting '(' |
 | lowercase true                   | yes |
-| trigger alternation A|B          | NO â€” L3:16 token recognition error at: '|' |
-| dotted trigger                   | NO â€” L3:6 mismatched input '.' expecting 'check' |
-| multiword trigger                | NO â€” L3:6 extraneous input 'on' expecting 'check' |
-| llm_self_examine (README)        | NO â€” L8:0 mismatched input 'end' expecting ':' |
+| trigger alternation A|B          | NO — L3:16 token recognition error at: '|' |
+| dotted trigger                   | NO — L3:6 mismatched input '.' expecting 'check' |
+| multiword trigger                | NO — L3:6 extraneous input 'on' expecting 'check' |
+| llm_self_examine (README)        | NO — L8:0 mismatched input 'end' expecting ':' |
 | llm_self_reflect (grammar)       | yes |
 | invoke_action                    | yes |
-| conjunction with &               | NO â€” L5:14 token recognition error at: '&' |
+| conjunction with &               | NO — L5:14 token recognition error at: '&' |
 | negation !p                      | yes |
 
 ## B.3  Fail-open check (`Rule.from_text` on malformed input)
