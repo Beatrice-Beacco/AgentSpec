@@ -265,6 +265,50 @@ grammar rejects, and rightly: accepting it would mean accepting arbitrary prose.
 It is the ceiling on S3.4. **61 of 62 rules can be compiled; the 62nd was never
 written in the language.**
 
+## D-10 · AgentSpec ships three example rules its own parser rejects
+
+*Found 2026-09-10 during S3.2.*
+
+`src/spec_lang/rule_examples/` held three `.ar` files, and
+`src/spec_lang/test_parse.py` exists to parse them. **All three fail.** They are
+preserved unmodified in `rule_examples/legacy/`.
+
+They are not typos. They describe a **more expressive language than was ever
+implemented**:
+
+| construct | example | what the grammar has |
+|---|---|---|
+| `act` before the event | `trigger act TerminalExecute` | `event` is a bare identifier — `act` is taken as the event and the real name is extraneous |
+| a `prepare` clause | `prepare val light_states = invoke_action(...)` | `rule` has four clauses; there is no fifth |
+| string arguments to a predicate | `llm_judge(cur_action["command"], "Return true if it is risky")` | `predicate_func: IDENTIFIER LPAREN number RPAREN` — one argument, and it must be a number |
+| subscripting | `light["light_states"]["traffic_id"]` | `value` supports it; `predicate` cannot reach `value` |
+
+`prepare` binds the result of a tool call so later checks can read it — that is
+path sensitivity, sketched and abandoned. `llm_judge` passes a natural-language
+question to a model. Both are real ideas; neither reaches the grammar or the
+runtime.
+
+**A second, independent bug in the same test.** Its fixture path was the
+relative string `'rule_examples/'`, so it could only run with the working
+directory set to `src/spec_lang` — from anywhere else it died with
+`FileNotFoundError` before parsing a single rule. So the test never reported the
+three failures above to anyone who ran it normally. Fixed locally to resolve
+against `__file__`.
+
+### The trap this left for the compiler
+
+Our permissive grammar accepts multi-word events, for `embodied.ar`'s
+`turn on`. As a side effect it now parses `trigger act CommandLine` — but as a
+**two-word event name**, not as a keyword plus a tool. A compiler that took the
+event verbatim would emit `Tool::"act CommandLine"`, which matches nothing and
+would fail silently.
+
+Pinned by `test_the_full_grammar_recovers_one_of_them_but_reads_it_differently`.
+S3.3 has to strip a leading `act`, and this is why 1 of the 3 legacy fixtures
+parses under the full grammar while the other two do not: `prepare` and string
+predicate arguments were deliberately **not** added, since no corpus rule uses
+either.
+
 ---
 
 ## Observations on the design (not corpus defects)

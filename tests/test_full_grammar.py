@@ -203,3 +203,112 @@ def test_the_generated_parser_matches_the_grammar_file():
         tokens = handle.read()
     for token in ("AND", "OR", "LINE_COMMENT", "BLOCK_COMMENT"):
         assert f"{token}=" in tokens, f"{token} missing -- regenerate the parser"
+
+
+# ------------------------------------------- the repo's own fixtures (S3.2)
+
+EXAMPLES = os.path.join(SRC, "spec_lang", "rule_examples")
+
+
+def fixtures(directory=EXAMPLES):
+    return sorted(f for f in os.listdir(directory) if f.endswith(".ar"))
+
+
+@pytest.mark.parametrize("name", fixtures())
+def test_the_repo_fixtures_parse_under_the_shipped_grammar(name):
+    """S3.2: `spec_lang/test_parse.py` must pass, and it uses the shipped parser.
+
+    So these have to be shipped-legal -- which is why none of them carries a
+    comment. A single `//` line makes the whole file unparseable, since the
+    shipped grammar has no comment token.
+    """
+    with open(os.path.join(EXAMPLES, name), encoding="utf-8") as handle:
+        assert shipped(handle.read()) == [], name
+
+
+@pytest.mark.parametrize("name", fixtures())
+def test_the_repo_fixtures_also_parse_under_the_full_grammar(name):
+    with open(os.path.join(EXAMPLES, name), encoding="utf-8") as handle:
+        assert parse(handle.read()) == [], name
+
+
+def test_the_fixtures_cover_the_grammars_features():
+    """A parser test is only worth running if it exercises the parser."""
+    joined = ""
+    for name in fixtures():
+        with open(os.path.join(EXAMPLES, name), encoding="utf-8") as handle:
+            joined += handle.read()
+
+    for feature in ("!",                      # negation
+                    "invoke_action",          # substitution enforcement
+                    "state_change",           # a non-identifier event
+                    "real:",                  # config enforcement
+                    "("):                     # a parameterised predicate
+        assert feature in joined, f"no fixture covers {feature!r}"
+
+
+def legacy_text(name):
+    with open(os.path.join(EXAMPLES, "legacy", name), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def test_all_three_legacy_fixtures_fail_under_the_shipped_grammar():
+    """The originals are evidence (docs/findings.md D-10), not clutter.
+
+    AgentSpec ships three example rules that its own parser rejects. They use a
+    *more expressive* language than was implemented -- an `act` keyword before
+    the event, a `prepare` clause, string arguments to predicates.
+    """
+    names = fixtures(os.path.join(EXAMPLES, "legacy"))
+    assert len(names) == 3
+
+    for name in names:
+        assert shipped(legacy_text(name)) != [],             f"{name} now parses under the shipped grammar"
+
+
+def test_the_full_grammar_recovers_one_of_them_but_reads_it_differently():
+    """`act CommandLine` parses -- as a *two-word event name*, not a keyword.
+
+    Multi-word events were added for embodied.ar's `turn on`, and they swallow
+    `act X` as a side effect. That is a trap for S3.3 rather than a win: the
+    tool is `CommandLine`, and a compiler that takes the event verbatim would
+    emit `Tool::"act CommandLine"`, which matches nothing.
+    """
+    assert parse(legacy_text("predicate.ar")) == []
+
+    tree_text = _event_words(legacy_text("predicate.ar"))
+    assert tree_text == ["act", "CommandLine"], tree_text
+
+
+def _event_words(text):
+    """The event words the full grammar sees, in order."""
+    lexer = AgentSpecFullLexer(InputStream(text))
+    parser = AgentSpecFullParser(CommonTokenStream(lexer))
+    parser.removeErrorListeners()
+    event = parser.program().rule_(0).triggerClause().event()
+    return [w.getText() for w in event.getTypedRuleContexts(
+        type(event.eventTerm(0).eventPath(0)))] or         [p.getText() for p in event.eventTerm(0).eventPath()]
+
+
+def test_the_other_two_still_fail_under_the_full_grammar():
+    """`prepare` and string predicate arguments were deliberately not added.
+
+    No corpus rule uses either, so supporting them would be speculative work
+    that widens the compiler's input for nothing.
+    """
+    for name in ("conflict_light_status.ar",
+                 "inspect_dangerous_command_before_execution.ar"):
+        assert parse(legacy_text(name)) != [], f"{name} now parses"
+
+
+def test_the_repos_own_unit_test_passes_from_anywhere():
+    """It could only ever run with the cwd set to src/spec_lang; the fixture
+    path was the relative string 'rule_examples/'."""
+    import unittest                                      # noqa: PLC0415
+
+    from spec_lang import test_parse as repo_test        # noqa: PLC0415
+
+    suite = unittest.defaultTestLoader.loadTestsFromModule(repo_test)
+    result = unittest.TextTestRunner(verbosity=0).run(suite)
+
+    assert result.wasSuccessful(), result.errors + result.failures

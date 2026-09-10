@@ -1,8 +1,10 @@
 rule @inspect_dangerous_command_before_execution
-trigger 
-    act TerminalExecute  
-check 
-    llm_judge(cur_action["command"], "Return true if it is risky command, [description of risky command]")
-enforce 
+trigger
+    PythonREPL
+check
+    involve_system_file
+    submit_post_request
+    !read_io
+enforce
     user_inspection
 end

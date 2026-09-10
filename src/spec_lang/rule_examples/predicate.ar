@@ -1,8 +1,8 @@
 rule @dangerous_cmd
-trigger 
-    act CommandLine 
-check 
-    is_destructive
+trigger
+    PythonREPL
+check
+    destuctive_os_inst
 enforce
     llm_self_reflect
 end

@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 3, Step S3.2 (fix the `.ar` fixtures / repo unit test).
+**Current position:** Sprint 3, Step S3.3 (the AgentSpec → Cedar compiler).
 
 ---
 
@@ -325,9 +325,20 @@ Goal: bring the existing rule corpus across automatically. **Cuttable if behind.
       |---|---:|
       | shipped (untouched) | **18 / 62** |
       | full (ours) | **61 / 62** |
-- [ ] **S3.2** Fix `src/spec_lang/rule_examples/*.ar` (they use a dead older syntax) so
-      the repo's own unit test passes, or replace the fixtures.
-      *Accept:* `pytest` + `python -m unittest spec_lang.test_parse` both green.
+- [x] **S3.2** Fix `src/spec_lang/rule_examples/*.ar` (they use a dead older syntax) so
+      the repo's own unit test passes, or replace the fixtures. ✅ 2026-09-10
+      **Replaced, and kept the originals** in `rule_examples/legacy/` with a README —
+      three example rules AgentSpec's own parser rejects is evidence, not clutter
+      (**D-10**). Four new fixtures, between them covering every construct the shipped
+      grammar implements: negation, `invoke_action`, `state_change`, `config`, a
+      parameterised predicate. **None carries a comment** — a single `//` makes the
+      file unparseable, so the explanation is in a README beside them.
+      Also fixed a second bug in the same test: its fixture path was the relative
+      string `'rule_examples/'`, so it could only run from `src/spec_lang` and died
+      with `FileNotFoundError` everywhere else — which is why nobody saw the three
+      failures.
+      *Accept:* ✅ `python -m unittest spec_lang.test_parse` green **from any
+      directory**; `pytest` green (495 passed).
 - [ ] **S3.3** `agentguard/compile.py` — an ANTLR listener implementing the mapping table
       in thesis plan §C.6 (trigger→resource, check→context conditions,
       enforce→effect + `@advice`).
@@ -514,3 +525,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-06 | S2.9 | Cedar profiled, and **two expectations the plan carried since S0.11 did not survive it**. The architectural claim did: `rule_parse` is exactly **0.0%** of AgentGuard's guard against **79.2%** of AgentSpec's. But (1) *"the policy engine is free; detection is the cost"* is **not supported at these input sizes** — detection 0.5104 ms against decision 0.5067 ms, within 1%. The slogan was extrapolated from S1.4's 0.058 ms spike, which used a 1-flag request with no schema and no entity store; on the real request the decision is 0.2341 ms, of which **passing the `Schema` on every call is +0.087 ms — over a third**, the entity store +0.029, and the 24 extra flags +0.039. So the decision cost is dominated by **marshalling across the Python/Rust boundary, not by evaluating policies**, which is both more useful and names an optimisation (hoist the parsed schema). And (2) **AgentGuard's guard total is 2.3× AgentSpec's** — reported plainly, because the cause is our S2.3 choice to materialise the whole domain (25 sensors per step vs the 1–2 AgentSpec names), not a cost Cedar imposes; S2.3 already measured the lever at 25→1. Methodological fix worth keeping: a profiling run builds executors of both kinds, so steps are now tagged with `engine` and the report filters — the first measurement blended them and showed a nonzero `rule_parse` under Cedar. Also pinned the report's output encoding: on Windows the `·` separator was being written as cp1252 and the frozen `.md` was not valid UTF-8. |
 | 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |
 | 2026-09-10 | S3.1 | Took the **second-grammar** route rather than editing `src/spec_lang/AgentSpec.g4`, on the reasoning that the shipped grammar rejecting **44 of the 62 rules in its own repository** is a measurement, and repairing it in place would both erase the finding and make "AgentSpec" mean a version we fixed in every RQ2/RQ3 comparison afterwards. `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses; `tools/audit_rules.py --grammar full|shipped` reports both, and `tests/test_full_grammar.py` asserts in **both directions** — that ours accepts each construct *and that the shipped one still rejects it*, so an edit to the baseline fails a test rather than passing silently. Result **61/62 rules**, not the planned 62: **D-8**, two files carry unmarked prose between rules (`=== below is security-related`, `case 20-23 The23andMe ????`) which is neither comment nor rule, so *whole-file* parsing can never be clean under any grammar without editing the corpus — coverage has to be measured per rule; and **D-9**, `@inspect_side_channel`'s check clause is an English sentence (`resources_that_provide_side_channel_info(e.g. how much time/power ...)`), which we decline to accept because accepting it means accepting prose. 61/62 is therefore the ceiling on S3.4. Also kept multi-word and dotted events apart in the parse tree: `getText()` would render `turn on` as `turnon`, silently mangling the trigger. |
+| 2026-09-10 | S3.2 | Replaced the fixtures, kept the originals under `rule_examples/legacy/`. **D-10: AgentSpec ships three example rules its own parser rejects**, and they are not typos — they describe a *more expressive* language than was implemented: an `act` keyword before the event, a `prepare` clause binding a tool call's result for later checks (which is path sensitivity, sketched and abandoned), string arguments to predicates, subscripting. A second, independent bug in the same test hid all of it: the fixture path was the relative string `'rule_examples/'`, so the test only ran with the cwd set to `src/spec_lang` and died with `FileNotFoundError` anywhere else. **A trap this left for S3.3:** our permissive grammar accepts multi-word events (added for `turn on`), so it now parses `trigger act CommandLine` — but as a *two-word event name*. A compiler taking the event verbatim would emit `Tool::"act CommandLine"` and match nothing, silently. Pinned by a test; the compiler must strip a leading `act`. Deliberately did **not** add `prepare` or string predicate arguments: no corpus rule uses either, so it would widen the compiler's input for nothing — which is why 1 of the 3 legacy fixtures now parses and 2 still do not. |
