@@ -27,6 +27,7 @@ back as a `Compiled`, and one that cannot be expressed carries the reason why.
 Those reasons *are* RQ1: `docs/coverage.md` (S3.5) is a table of them, and a
 compiler that silently dropped them would be answering the wrong question.
 """
+import ast
 import json
 import os
 import re
@@ -421,3 +422,103 @@ def compile_file(path, known_flags=None):
         text = handle.read()
     rel = os.path.relpath(path, agentguard.REPO_ROOT).replace(os.sep, "/")
     return compile_text(text, f"agentspec:{rel}", known_flags)
+
+
+# ----------------------------------------------- the LLM-generated corpus
+
+
+def predicate_names(source: str) -> Tuple[str, ...]:
+    """The function names defined in a predicate source string.
+
+    **Parsed, never executed.** These are model-written Python that arrives in a
+    data file; running it to find out what it is called would be exactly the
+    class of thing this project exists to prevent. `ast.parse` is enough.
+    """
+    try:
+        tree = ast.parse(source.strip())
+    except SyntaxError:
+        return ()
+    return tuple(node.name for node in ast.walk(tree)
+                 if isinstance(node, ast.FunctionDef))
+
+
+def llm_rule_ir(record) -> Tuple[Optional[RuleIR], Tuple[str, ...]]:
+    """(RuleIR, problems) for one record of generated_rules-*.jsonl.
+
+    These rules are not DSL text. Each carries its trigger, its enforcement, and
+    the **source of its own predicates** -- so unlike the shipped corpus, whose
+    rules name predicates that often do not exist anywhere (D-3), these bring
+    theirs with them. That is the interesting difference, and it is why they
+    compile at a completely different rate.
+    """
+    name = record.get("name")
+    if not name:
+        return None, ("record has no name",)
+
+    checks, problems = [], []
+    for source in record.get("predicates", ()):
+        found = predicate_names(source)
+        if not found:
+            problems.append("a predicate's source does not parse as Python")
+            continue
+        # A predicate block may define helpers; the rule's check is the last
+        # function defined, which is the one the generator emits as the entry
+        # point.
+        checks.append(Check(name=found[-1]))
+
+    event = record.get("event")
+    enforcement = record.get("enforcement")
+    if not enforcement:
+        problems.append("record has no enforcement")
+
+    return RuleIR(
+        id=name,
+        events=(event,) if event else (),
+        checks=tuple(checks),
+        enforcements=(Enforcement(kind=ENFORCEMENT_ALIASES.get(enforcement,
+                                                               enforcement),
+                                  text=str(enforcement)),) if enforcement else (),
+    ), tuple(problems)
+
+
+def compile_llm_file(path, known_flags=None):
+    """Compile one generated_rules-*.jsonl.
+
+    `known_flags` defaults to the registry *plus* every predicate these rules
+    define -- because they define them. Pass the registry alone to measure how
+    many would compile without registering anything new.
+    """
+    with open(path, encoding="utf-8") as handle:
+        records = [json.loads(line) for line in handle if line.strip()]
+
+    if known_flags is None:
+        known_flags = set(sensor_registry.FLAGS)
+        for record in records:
+            for source in record.get("predicates", ()):
+                known_flags.update(predicate_names(source))
+
+    rel = os.path.relpath(path, agentguard.REPO_ROOT).replace(os.sep, "/")
+    out = []
+    for record in records:
+        ir, problems = llm_rule_ir(record)
+        source = f"agentspec:{rel}#{record.get('name', '<unnamed>')}"
+        if ir is None or problems:
+            out.append(Compiled(rule_id=record.get("name", "<unnamed>"),
+                                source=source, reasons=problems or ("unreadable",),
+                                ir=ir))
+            continue
+        out.append(to_policy(ir, source, known_flags))
+    return out
+
+
+def llm_flags(paths) -> Tuple[str, ...]:
+    """Every flag the generated rules define, sorted. Input to the schema."""
+    found = set()
+    for path in paths:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                for source in json.loads(line).get("predicates", ()):
+                    found.update(predicate_names(source))
+    return tuple(sorted(found))

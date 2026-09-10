@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-full audit-freeze audit-full-freeze grammar profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-full audit-freeze audit-full-freeze compile-corpus grammar profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 527 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 535 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -97,6 +97,9 @@ audit-full:  ## audit the corpus with the permissive grammar (S3.1)
 audit-full-freeze:  ## regenerate docs/corpus-audit-full.md
 	@$(PY) tools/audit_rules.py src --grammar full 2>/dev/null > docs/corpus-audit-full.md
 	@echo "wrote docs/corpus-audit-full.md"
+
+compile-corpus:  ## compile the rule corpus into policies/generated/ (S3.4)
+	@$(PY) tools/compile_corpus.py
 
 grammar:  ## regenerate the permissive parser (needs Java; jar is in the repo)
 	@java -jar src/spec_lang/antlr-4.13.2-complete.jar -Dlanguage=Python3 -o agentguard/speclang agentguard/speclang/AgentSpecFull.g4

@@ -369,3 +369,130 @@ def test_every_failure_gives_at_least_one_reason():
         if not compiled.ok:
             assert compiled.reasons, compiled.rule_id
             assert all(r.strip() for r in compiled.reasons)
+
+
+# ------------------------------------------------ the generated tree (S3.4)
+
+GENERATED = os.path.join(REPO_ROOT, "policies", "generated")
+
+
+def test_the_generated_tree_exists_and_is_current():
+    """S3.4: `policies/generated/` populated. Regenerate with `make compile-corpus`."""
+    import subprocess                                   # noqa: PLC0415
+
+    for name in ("code", "embodied", "llm"):
+        directory = os.path.join(GENERATED, name)
+        assert os.path.isfile(os.path.join(directory, "rules.cedar")), name
+        assert os.path.isfile(os.path.join(directory, "schema.cedarschema")), name
+    assert os.path.isfile(os.path.join(GENERATED, "coverage.json"))
+
+    # and it matches what the compiler produces right now
+    before = {}
+    for root, _dirs, names in os.walk(GENERATED):
+        for name in names:
+            path = os.path.join(root, name)
+            with open(path, encoding="utf-8") as handle:
+                before[path] = handle.read()
+
+    subprocess.run([sys.executable, os.path.join(REPO_ROOT, "tools",
+                                                 "compile_corpus.py"), "--quiet"],
+                   check=True, cwd=REPO_ROOT, capture_output=True)
+
+    for path, text in before.items():
+        with open(path, encoding="utf-8") as handle:
+            assert handle.read() == text, (
+                f"{path} is stale -- run `make compile-corpus`")
+
+
+def test_every_generated_policy_validates():
+    """S3.4's acceptance. Each directory is checked against its own schema."""
+    sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+    import validate_policies as vp                      # noqa: PLC0415
+
+    for name in ("code", "embodied", "llm"):
+        directory = os.path.join(GENERATED, name)
+        schema = vp.load_schema(os.path.join(directory, "schema.cedarschema"))
+        ok, messages = vp.check(os.path.join(directory, "rules.cedar"), schema)
+        assert ok, (name, messages)
+
+
+@pytest.mark.parametrize("name,domain", [("code", "code"),
+                                         ("embodied", "embodied")])
+def test_the_shipped_domains_load_into_an_engine(name, domain):
+    """A generated directory is meant to be usable, not just well-formed."""
+    engine.load.cache_clear()
+    bundle = engine.load(os.path.join(GENERATED, name), domain)
+    engine.load.cache_clear()
+
+    assert bundle.domain == domain
+    assert bundle.annotations
+
+
+def test_the_llm_directory_validates_but_will_not_load():
+    """Declaring a flag is not the same as being able to observe it.
+
+    The LLM rules bring the source of their own predicates, so the schema beside
+    them declares flags the registry does not have. Cedar is satisfied. The
+    engine is not, because no *sensor* produces them -- and that gap is exactly
+    what the S2.5 coverage check exists to catch.
+    """
+    engine.load.cache_clear()
+    with pytest.raises(engine.PolicyError) as exc:
+        engine.load(os.path.join(GENERATED, "llm"), "embodied")
+    engine.load.cache_clear()
+
+    assert "never materialised" in str(exc.value)
+
+    with open(os.path.join(GENERATED, "llm", "rules.cedar"),
+              encoding="utf-8") as handle:
+        assert "WILL NOT LOAD" in handle.read(), "the file must say so too"
+
+
+def test_the_llm_rules_compile_only_because_they_carry_their_predicates():
+    """The RQ1 contrast, in one assertion.
+
+    The human-written corpus compiles at 18/62, mostly because it names
+    predicates nothing registers (D-3). The generated rules compile at 20/20 --
+    and at 0/20 if you refuse to count the predicates they define. Same
+    compiler; the difference is entirely whether the rule brought its detector.
+    """
+    import glob as _glob                                # noqa: PLC0415
+
+    paths = sorted(_glob.glob(os.path.join(REPO_ROOT,
+                                           "src/rules/llm/generated_rules-*.jsonl")))
+    assert paths
+
+    with_own = [c for p in paths for c in ag_compile.compile_llm_file(p)]
+    registry_only = [c for p in paths
+                     for c in ag_compile.compile_llm_file(
+                         p, known_flags=set(sensors.FLAGS))]
+
+    assert sum(1 for c in with_own if c.ok) == 20
+    assert sum(1 for c in registry_only if c.ok) == 0
+
+
+def test_predicate_names_are_parsed_never_executed():
+    """Model-written Python arrives in a data file. We read it, we do not run it."""
+    marker = []
+    source = ("def sneaky(user_input, tool_input, steps):\n"
+              "    __import__('sys').modules['pytest'].MARKED = True\n"
+              "    return True\n")
+
+    assert ag_compile.predicate_names(source) == ("sneaky",)
+    assert not hasattr(pytest, "MARKED"), "the predicate source was executed"
+    assert marker == []
+
+
+def test_coverage_json_records_every_rule_and_its_reasons():
+    """S3.5 reads this file, so it has to carry the whole picture."""
+    with open(os.path.join(GENERATED, "coverage.json"), encoding="utf-8") as handle:
+        coverage = json.load(handle)
+
+    assert coverage["shipped"]["total"] == 62
+    assert coverage["shipped"]["compiled"] == 18
+    assert coverage["llm"]["total"] == 20
+    assert coverage["llm"]["compiled"] == 20
+    assert len(coverage["llm_flags_defined"]) == 22
+
+    for entry in coverage["shipped"]["rules"]:
+        assert entry["ok"] or entry["reasons"], entry["id"]

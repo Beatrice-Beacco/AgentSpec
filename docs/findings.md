@@ -313,6 +313,51 @@ either.
 
 ## Observations on the design (not corpus defects)
 
+### The LLM-generated rules compile at 20/20, and the reason is the finding — S3.4
+
+`src/rules/llm/generated_rules-{o1,4o}.jsonl` are not DSL text. Each record
+carries a trigger, an enforcement, and **the Python source of its own
+predicates**. Same compiler, wildly different result:
+
+| corpus | rules | compile |
+|---|---:|---:|
+| shipped `.ar` / `.rule` | 62 | **18** (29%) |
+| LLM-generated | 20 | **20** (100%) |
+| LLM-generated, *not* counting the predicates they define | 20 | **0** |
+
+The last row is the point. The generated rules compile because they bring their
+detector with them; the human-written corpus mostly does not compile because it
+names predicates nothing registers (D-3). The compiler is the same in both
+cases — the difference is entirely whether the rule shipped with the thing that
+observes the world.
+
+That is worth saying carefully in the write-up. It is **not** evidence that a
+model writes better guardrails than a person. It is evidence that a rule
+language whose predicates live somewhere else drifts from them, and that the
+generator avoided the problem by construction rather than by care.
+
+**Nothing executes that Python.** Predicate names come from `ast.parse`. A test
+asserts it, because "read a data file to find out what its functions are called"
+and "run a data file" are one careless line apart.
+
+### Validating and loading are different claims — S3.4
+
+`policies/generated/llm/` **validates and will not load**, and both halves are
+correct:
+
+* Cedar is satisfied — the schema beside those policies declares the 22 flags
+  the generated predicates define, so every attribute exists.
+* The engine refuses — `agentguard.engine.load` rejects a policy keyed on a flag
+  no **sensor** will ever materialise, and none of these has one.
+
+Declaring a flag is not the same as being able to observe it. The generated file
+says so in its own header, because a directory that type-checks looks deployable
+and is not.
+
+To actually deploy them you would register the generated predicates in the
+sensor registry — which means deciding to execute model-written Python. Nothing
+in the toolchain makes that decision for you.
+
 ### The compiler, and why 18 of 62 is the honest number — S3.3
 
 `agentguard/compile.py` implements the §C.6 mapping. Every rule comes back as a
