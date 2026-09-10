@@ -614,6 +614,26 @@ comparison is between the phases, never against the total.
 
 Reproduce: `make profile-freeze` and `make profile-cedar-freeze`.
 
+### A test of my own that could not be right — S3.4
+
+`test_cedar_still_does_not_list_determining_policies_in_source_order` asserted
+`ids != sorted(ids)`, on the strength of S1.2 having observed Cedar return
+`['policy2', 'policy1']`. It failed roughly one run in ten, because Cedar's
+ordering is **unspecified, not reversed** — sometimes it coincides with source
+order.
+
+You cannot establish that a value is unspecified by sampling it once, and a test
+that tries makes the suite flaky, which is worse than not having the test. What
+is assertable, and is what the design actually rests on, is that the *set* of
+determining policies is stable and the resolved outcome does not depend on their
+order. That is now what it checks.
+
+Worth recording because the failure was diagnostically useful: the assertion
+message I had written for it ("Cedar happened to return source order this time;
+the property under test is unaffected") turned out to be exactly right, and
+saying so in the message is what made a one-in-ten flake diagnosable in one run
+rather than three.
+
 ### Order independence, measured — S2.8
 
 Thesis claim M2, as a counterexample rather than an argument. The same three

@@ -132,19 +132,33 @@ def test_the_join_is_the_most_restrictive_not_the_first_listed(tmp_path):
     assert ag_advice.rank(ag_advice.STOP) < ag_advice.rank(ag_advice.SKIP)
 
 
-def test_cedar_still_does_not_list_determining_policies_in_source_order(tmp_path):
-    """The reason the join exists at all (docs/spikes.md S1.2).
+def test_the_determining_policies_are_a_set_not_a_sequence(tmp_path):
+    """Why "take the first determining policy" was never a safe design.
 
-    If Cedar listed them in source order, "take the first" would be a defensible
-    (if fragile) design. It does not, so it never was.
+    `diagnostics.reasons` is documented as the policies that determined the
+    decision, not as an ordering of them, and S1.2 observed it come back as
+    ['policy2', 'policy1'] -- not source order. It does not *always* differ,
+    though, and an earlier version of this test asserted `ids != sorted(ids)`,
+    which made the suite flaky roughly one run in ten: you cannot prove a value
+    is unspecified by sampling it once.
+
+    What can be asserted, and is what actually matters: the same three policies
+    determine the decision every time, and the outcome does not depend on the
+    order they come back in. The join is what makes the second true -- see
+    test_advice.py for its algebra.
     """
-    verdict = decide_with([BASELINE] + POLICIES, tmp_path)
-    ids = list(verdict.policy_ids)
+    # Five is enough to make the point; each iteration is a full load from
+    # disk, and the 100-shuffle test above already covers stability at volume.
+    orders = set()
+    for _ in range(5):
+        verdict = decide_with([BASELINE] + POLICIES, tmp_path)
+        assert len(verdict.policy_ids) == 3
+        assert verdict.advice == ag_advice.STOP
+        orders.add(tuple(sorted(c.policy for c in verdict.resolution.contributing)))
 
-    assert len(ids) == 3
-    assert ids != sorted(ids), (
-        "Cedar happened to return source order this time; the property under "
-        "test is unaffected, but the claim in docs/spikes.md needs re-checking")
+    assert orders == {("ask", "halt", "suppress")}, (
+        "the *set* of determining policies must be stable even though their "
+        "order is not")
 
 
 # ------------------------------------------------- sensors: also independent
