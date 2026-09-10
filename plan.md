@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 3, Step S3.3 (the AgentSpec → Cedar compiler).
+**Current position:** Sprint 3, Step S3.4 (compile the corpus into `policies/generated/`).
 
 ---
 
@@ -339,10 +339,22 @@ Goal: bring the existing rule corpus across automatically. **Cuttable if behind.
       failures.
       *Accept:* ✅ `python -m unittest spec_lang.test_parse` green **from any
       directory**; `pytest` green (495 passed).
-- [ ] **S3.3** `agentguard/compile.py` — an ANTLR listener implementing the mapping table
+- [x] **S3.3** `agentguard/compile.py` — an ANTLR listener implementing the mapping table
       in thesis plan §C.6 (trigger→resource, check→context conditions,
-      enforce→effect + `@advice`).
-      *Accept:* compiling the smoke-test rule yields a policy that produces an identical verdict.
+      enforce→effect + `@advice`). ✅ 2026-09-10
+      Parses with the S3.1 grammar into an IR, then emits. Every rule returns a
+      `Compiled` carrying either a policy or **every** reason it could not become one
+      — an apollo rule is blocked by trigger, predicate *and* enforcement at once, and
+      reporting only the first would understate the work.
+      *Accept:* ✅ the smoke-test rule compiles and gives an **identical verdict** to
+      the hand-written `core.cedar` — on the destructive input *and* the benign one.
+      **Corpus: 18/62 compile.** Largest blocker is D-3 (23 rules name a predicate
+      nothing registers), then `state_change` triggers (20) and `config` enforcement
+      (18). Full table in [`docs/findings.md`](docs/findings.md) — that is RQ1's raw
+      material for S3.5.
+      ⚠️ **The compiled corpus cannot be one policy set**: it mixes domains, and an
+      engine runs one. `Compiled.domain` partitions it; S3.4 writes one file per
+      domain.
 - [ ] **S3.4** Compile the whole corpus: 42 shipped rules + the LLM-generated ones in
       `src/rules/llm/generated_rules-{o1,4o}.jsonl`.
       *Accept:* `policies/generated/` populated; all pass `validate_policies()`.
@@ -526,3 +538,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |
 | 2026-09-10 | S3.1 | Took the **second-grammar** route rather than editing `src/spec_lang/AgentSpec.g4`, on the reasoning that the shipped grammar rejecting **44 of the 62 rules in its own repository** is a measurement, and repairing it in place would both erase the finding and make "AgentSpec" mean a version we fixed in every RQ2/RQ3 comparison afterwards. `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses; `tools/audit_rules.py --grammar full|shipped` reports both, and `tests/test_full_grammar.py` asserts in **both directions** — that ours accepts each construct *and that the shipped one still rejects it*, so an edit to the baseline fails a test rather than passing silently. Result **61/62 rules**, not the planned 62: **D-8**, two files carry unmarked prose between rules (`=== below is security-related`, `case 20-23 The23andMe ????`) which is neither comment nor rule, so *whole-file* parsing can never be clean under any grammar without editing the corpus — coverage has to be measured per rule; and **D-9**, `@inspect_side_channel`'s check clause is an English sentence (`resources_that_provide_side_channel_info(e.g. how much time/power ...)`), which we decline to accept because accepting it means accepting prose. 61/62 is therefore the ceiling on S3.4. Also kept multi-word and dotted events apart in the parse tree: `getText()` would render `turn on` as `turnon`, silently mangling the trigger. |
 | 2026-09-10 | S3.2 | Replaced the fixtures, kept the originals under `rule_examples/legacy/`. **D-10: AgentSpec ships three example rules its own parser rejects**, and they are not typos — they describe a *more expressive* language than was implemented: an `act` keyword before the event, a `prepare` clause binding a tool call's result for later checks (which is path sensitivity, sketched and abandoned), string arguments to predicates, subscripting. A second, independent bug in the same test hid all of it: the fixture path was the relative string `'rule_examples/'`, so the test only ran with the cwd set to `src/spec_lang` and died with `FileNotFoundError` anywhere else. **A trap this left for S3.3:** our permissive grammar accepts multi-word events (added for `turn on`), so it now parses `trigger act CommandLine` — but as a *two-word event name*. A compiler taking the event verbatim would emit `Tool::"act CommandLine"` and match nothing, silently. Pinned by a test; the compiler must strip a leading `act`. Deliberately did **not** add `prepare` or string predicate arguments: no corpus rule uses either, so it would widen the compiler's input for nothing — which is why 1 of the 3 legacy fixtures now parses and 2 still do not. |
+| 2026-09-10 | S3.3 | Compiler landed; the smoke-test rule compiles to a policy that gives an **identical verdict** to the hand-written one, on both the destructive and the benign input — text equality would have been the wrong assertion, since two policies can be spelled differently and decide the same. **Corpus: 18/62.** Made it report *every* blocker rather than the first: 24 rules are stopped by one thing, 1 by two and **19 by three** — every apollo rule fails on its trigger, its predicate and its enforcement independently, so a first-blocker-only table would badly understate the work. The single largest cause is **D-3**, 23 rules naming a predicate nothing registers — rules that could not have fired in AgentSpec either, so this is a measurement of the corpus rather than of the compiler. Two things worth carrying forward: `check !p` compiles to "p ran and came back false", **not** "p is absent" — the latter would make the rule fire whenever nobody looked, inverting the author's intent; and **the compiled corpus cannot be a single policy set**, because it mixes domains (10 code, 1 embodied, 7 flagless) and an engine runs one — found by the S2.5 coverage check refusing to load it, which is that check paying for itself on real input. `Compiled.domain` now partitions them for S3.4. |

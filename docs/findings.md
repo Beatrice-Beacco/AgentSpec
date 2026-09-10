@@ -313,6 +313,61 @@ either.
 
 ## Observations on the design (not corpus defects)
 
+### The compiler, and why 18 of 62 is the honest number — S3.3
+
+`agentguard/compile.py` implements the §C.6 mapping. Every rule comes back as a
+`Compiled` carrying either a policy or **every** reason it could not become one —
+not the first reason, because an apollo rule is blocked by its trigger, its
+predicate *and* its enforcement independently, and a table showing only the first
+would understate what bringing it across takes.
+
+| | rules |
+|---|---:|
+| compiled to a Cedar policy | **18** |
+| blocked by exactly one thing | 24 |
+| blocked by two | 1 |
+| blocked by three | 19 |
+| **total** | **62** |
+
+The blockers, in order of how many rules they stop:
+
+| blocker | rules | why |
+|---|---:|---|
+| names a predicate nothing registers | 23 | D-3 in force — the `.ar` corpus and the executable table disagree |
+| triggers on `state_change` | 20 | the schema declares one action, `invoke` |
+| `config` enforcement | 18 | apollo's planner-parameter assignments have no Cedar equivalent |
+| parameterised predicate `p(10)` | 19 | sensors are nullary; there is no flag to test |
+| `enforce none` | 1 | the rule matches and chooses not to act |
+| does not parse | 1 | D-9, the English-sentence check clause |
+
+**Read this as a measurement of the corpus, not of the compiler.** The
+single largest cause is that the corpus names predicates that were never
+registered — a rule that could not have fired in AgentSpec either. Compiling it
+would produce a policy that cannot fire for the same reason, which is why the
+engine's coverage check (S2.5) refuses it rather than emitting it.
+
+### `check !p` does not mean "p is absent" — S3.3
+
+Under the record schema there are three states, and AgentSpec's `!p` maps to the
+middle one:
+
+    context.flags has p && !context.flags.p     p ran and came back false   <- this
+    !(context.flags has p)                      nobody looked
+
+Compiling `!p` to the second would make the rule fire whenever the sensor had not
+run, which inverts the author's intent. Cheap to get wrong, and invisible
+afterwards.
+
+### The compiled corpus cannot be one policy set — S3.3
+
+Found by the engine refusing to load it. An engine runs **one domain's** sensors
+(S2.3) and refuses to start on a policy keyed on a flag it will never
+materialise (S2.5). The compiled corpus mixes domains — 10 code, 1 embodied, 7
+that read no flags at all — so it has to be written as one file per domain.
+
+That is the startup coverage check paying for itself on real input, and it is
+the shape S3.4 has to generate.
+
 ### Two grammars, and why the shipped one is not repaired — S3.1
 
 The plan's S3.1 says to fix `src/spec_lang/AgentSpec.g4` in place. We did not,
