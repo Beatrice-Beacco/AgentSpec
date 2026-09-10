@@ -5,7 +5,7 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-full audit-freeze audit-full-freeze compile-corpus grammar profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-full audit-freeze audit-full-freeze compile-corpus coverage coverage-freeze grammar profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
@@ -15,7 +15,7 @@ $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 535 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 540 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -100,6 +100,14 @@ audit-full-freeze:  ## regenerate docs/corpus-audit-full.md
 
 compile-corpus:  ## compile the rule corpus into policies/generated/ (S3.4)
 	@$(PY) tools/compile_corpus.py
+
+coverage:  ## print the RQ1 coverage report (needs `make compile-corpus` first)
+	@$(PY) tools/coverage_report.py
+
+coverage-freeze:  ## recompile the corpus and regenerate docs/coverage.md (RQ1)
+	@$(PY) tools/compile_corpus.py --quiet
+	@$(PY) tools/coverage_report.py > docs/coverage.md
+	@echo "wrote docs/coverage.md"
 
 grammar:  ## regenerate the permissive parser (needs Java; jar is in the repo)
 	@java -jar src/spec_lang/antlr-4.13.2-complete.jar -Dlanguage=Python3 -o agentguard/speclang agentguard/speclang/AgentSpecFull.g4

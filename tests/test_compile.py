@@ -496,3 +496,111 @@ def test_coverage_json_records_every_rule_and_its_reasons():
 
     for entry in coverage["shipped"]["rules"]:
         assert entry["ok"] or entry["reasons"], entry["id"]
+
+
+# ------------------------------------------------ docs/coverage.md (S3.5)
+
+COVERAGE_MD = os.path.join(REPO_ROOT, "docs", "coverage.md")
+
+#: Everything above this heading is provenance -- the generation date and the
+#: commit -- and it is *expected* to go stale between regenerations. Everything
+#: from here down is derived from coverage.json and must not.
+BODY_STARTS = "## The number"
+
+
+def coverage_report():
+    sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+    import coverage_report                              # noqa: PLC0415
+
+    return coverage_report
+
+
+def body_of(text):
+    assert BODY_STARTS in text, "the report lost its first heading"
+    return text[text.index(BODY_STARTS):]
+
+
+def test_the_coverage_doc_is_current():
+    """RQ1's answer is generated, so it cannot drift from the corpus.
+
+    Only the body is compared. The header carries today's date and HEAD, which
+    change on every commit -- asserting on those would mean a test that fails
+    for the wrong reason immediately after passing.
+
+    Regenerate with `make coverage-freeze`.
+    """
+    with open(os.path.join(GENERATED, "coverage.json"), encoding="utf-8") as handle:
+        coverage = json.load(handle)
+    with open(COVERAGE_MD, encoding="utf-8") as handle:
+        published = handle.read()
+
+    assert body_of(published) == body_of(coverage_report().build(coverage)), (
+        "docs/coverage.md disagrees with policies/generated/coverage.json -- "
+        "run `make coverage-freeze`")
+
+
+def test_the_coverage_doc_states_the_rq1_number():
+    """The one sentence a reader must be able to find."""
+    with open(COVERAGE_MD, encoding="utf-8") as handle:
+        published = handle.read()
+
+    assert "**18 of 62 shipped rules compile into Cedar policies (29%).**" in published
+
+
+def test_every_failure_is_categorised():
+    """The report's analysis has to cover every reason, not most of them.
+
+    `category()` falls back to an "other: ..." label rather than raising, so a
+    new reason string would quietly land in a bucket with no explanation beside
+    it. This is what notices.
+    """
+    module = coverage_report()
+    with open(os.path.join(GENERATED, "coverage.json"), encoding="utf-8") as handle:
+        coverage = json.load(handle)
+
+    uncategorised = sorted({
+        reason
+        for rule in coverage["shipped"]["rules"] + coverage["llm"]["rules"]
+        for reason in rule["reasons"]
+        if module.category(reason).startswith("other: ")
+    })
+    assert not uncategorised, (
+        f"tools/coverage_report.py has no category for: {uncategorised}")
+
+    for rule in coverage["shipped"]["rules"]:
+        for name in module.categories_of(rule):
+            assert name in module.EXPLANATIONS, f"{name} has no explanation"
+
+
+def test_every_failing_rule_appears_in_the_appendix():
+    """S3.5 asks for "an analysis of every failure" -- so, every one."""
+    with open(os.path.join(GENERATED, "coverage.json"), encoding="utf-8") as handle:
+        coverage = json.load(handle)
+    with open(COVERAGE_MD, encoding="utf-8") as handle:
+        published = handle.read()
+
+    appendix = published[published.index("## Appendix"):]
+    for rule in coverage["shipped"]["rules"]:
+        assert f"`{rule['id']}`" in appendix, rule["id"]
+
+
+def test_the_ladder_adds_up():
+    """The cumulative table has to account for every failing rule exactly once.
+
+    18 compiled + 23 rescued by registering predicates + 20 by the apollo
+    changes + 1 unfixable = 62. If a new reason category appeared and no ladder
+    row covered it, this is where the arithmetic would stop closing.
+    """
+    module = coverage_report()
+    with open(os.path.join(GENERATED, "coverage.json"), encoding="utf-8") as handle:
+        shipped = json.load(handle)["shipped"]
+
+    fails = [r for r in shipped["rules"] if not r["ok"]]
+    every = {"unregistered predicate", "non-invoke trigger",
+             "parameterised predicate", "config enforcement"}
+    reachable = sum(1 for r in fails if module.categories_of(r) <= every)
+    unfixable = [r for r in fails if not module.categories_of(r) <= every]
+
+    assert shipped["compiled"] + reachable + len(unfixable) == shipped["total"]
+    assert [r["id"] for r in unfixable] == ["inspect_side_channel"], (
+        "exactly one rule is unreachable, and it is the English-sentence one (D-9)")

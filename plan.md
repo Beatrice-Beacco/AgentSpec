@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 3, Step S3.5 (`docs/coverage.md` — RQ1 answered).
+**Current position:** Sprint 3 complete (RQ1 answered: **18/62**). Next: Sprint 4, Step S4.1.
 
 ---
 
@@ -367,11 +367,21 @@ Goal: bring the existing rule corpus across automatically. **Cuttable if behind.
       predicates they define themselves.** That contrast is the RQ1 headline.
       ⚠️ `generated/llm/` **validates but will not load**: its schema declares the 22
       flags those rules define, but no *sensor* produces them. The file says so.
-- [ ] **S3.5** Write `docs/coverage.md`: how many rules compiled cleanly / with warnings /
+- [x] **S3.5** Write `docs/coverage.md`: how many rules compiled cleanly / with warnings /
       not at all, **with an analysis of every failure**. Failures are findings.
-      *Accept:* table + prose; this is thesis RQ1.
+      *Accept:* table + prose; this is thesis RQ1. ✅ 2026-09-10
+      `tools/coverage_report.py` generates it from `coverage.json` (`make coverage-freeze`),
+      so the prose cannot drift from the numbers; a test compares the published body
+      against a fresh render.
+      **18/62 compiled, 0 with warnings, 44 not at all**, every one categorised and
+      the full 62-row appendix included.
+      The 44 **partition into four groups** — 23 blocked only by an unregistered
+      predicate, 20 (the whole apollo corpus) blocked by two or three things at once,
+      1 unparseable. So the honest ceiling is **41/62**, not 61/62: the apollo rules
+      need planner-parameter assignment, which is configuration rather than access
+      control and is the one change this design should refuse.
 
-**Sprint 3 exit:** RQ1 answered with a number.
+**Sprint 3 exit:** ✅ RQ1 answered with a number — **18/62**, ceiling 41/62.
 
 ---
 
@@ -549,3 +559,4 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-10 | S3.2 | Replaced the fixtures, kept the originals under `rule_examples/legacy/`. **D-10: AgentSpec ships three example rules its own parser rejects**, and they are not typos — they describe a *more expressive* language than was implemented: an `act` keyword before the event, a `prepare` clause binding a tool call's result for later checks (which is path sensitivity, sketched and abandoned), string arguments to predicates, subscripting. A second, independent bug in the same test hid all of it: the fixture path was the relative string `'rule_examples/'`, so the test only ran with the cwd set to `src/spec_lang` and died with `FileNotFoundError` anywhere else. **A trap this left for S3.3:** our permissive grammar accepts multi-word events (added for `turn on`), so it now parses `trigger act CommandLine` — but as a *two-word event name*. A compiler taking the event verbatim would emit `Tool::"act CommandLine"` and match nothing, silently. Pinned by a test; the compiler must strip a leading `act`. Deliberately did **not** add `prepare` or string predicate arguments: no corpus rule uses either, so it would widen the compiler's input for nothing — which is why 1 of the 3 legacy fixtures now parses and 2 still do not. |
 | 2026-09-10 | S3.3 | Compiler landed; the smoke-test rule compiles to a policy that gives an **identical verdict** to the hand-written one, on both the destructive and the benign input — text equality would have been the wrong assertion, since two policies can be spelled differently and decide the same. **Corpus: 18/62.** Made it report *every* blocker rather than the first: 24 rules are stopped by one thing, 1 by two and **19 by three** — every apollo rule fails on its trigger, its predicate and its enforcement independently, so a first-blocker-only table would badly understate the work. The single largest cause is **D-3**, 23 rules naming a predicate nothing registers — rules that could not have fired in AgentSpec either, so this is a measurement of the corpus rather than of the compiler. Two things worth carrying forward: `check !p` compiles to "p ran and came back false", **not** "p is absent" — the latter would make the rule fire whenever nobody looked, inverting the author's intent; and **the compiled corpus cannot be a single policy set**, because it mixes domains (10 code, 1 embodied, 7 flagless) and an engine runs one — found by the S2.5 coverage check refusing to load it, which is that check paying for itself on real input. `Compiled.domain` now partitions them for S3.4. |
 | 2026-09-10 | S3.4 | Corpus compiled into `policies/generated/`, one self-contained directory per domain (schema + baseline + rules) so each is loadable as-is via `$AGENTGUARD_POLICIES`. **The RQ1 contrast is sharper than expected**: the shipped corpus compiles at **18/62**, the LLM-generated rules at **20/20** — and at **0/20** if you refuse to count the predicates they define themselves. Same compiler; the difference is entirely whether the rule shipped with the thing that observes the world. That is *not* evidence a model writes better guardrails than a person — it is evidence that a language whose predicates live somewhere else drifts from them (D-3), and the generator avoided that by construction. **Nothing executes the model-written Python**: predicate names come from `ast.parse`, and a test asserts it, because reading a data file and running one are a careless line apart. Second finding: `generated/llm/` **validates but will not load** — Cedar is satisfied because its schema declares those 22 flags, but the engine refuses a policy keyed on a flag no sensor materialises. Declaring a flag is not being able to observe it, and a directory that type-checks looks deployable; the generated header says so outright. `validate_policies` now uses the schema in each policy's own directory. |
+| 2026-09-10 | S3.5 | RQ1 answered: **18/62 compiled, 0 with warnings, 44 not**. Generated `docs/coverage.md` from `coverage.json` rather than writing it, so the analysis cannot drift from the numbers it describes — a test compares the published body against a fresh render, skipping the provenance header (which carries HEAD and today's date, and would otherwise fail the test on the very next commit). **The interesting result is not the 29% but the shape of the failures**: the 44 partition cleanly into four groups with nothing in between, and the cumulative ladder therefore has two rows that rescue **zero** rules. Adding `action state_change` to the schema is an afternoon's work and moves the number by nothing, because every rule needing it also needs planner-parameter assignment — `Min_stop_distance = 10`, which neither permits nor forbids anything but tunes a controller. That is configuration, not access control, and declining it is what makes the honest target **41/62 rather than 61/62**; the remaining 23 are pure labour (detectors nobody wrote, dead in AgentSpec too) and 1 is prose. Writing the generator found a **reproducibility bug in my own reporting**: `categories_of` returns a set, so tied counts ordered by string hash and the same input produced different Markdown per process — caught by the freshness test on its first run, fixed by breaking ties on name, and now byte-identical across processes. |
