@@ -1,13 +1,8 @@
 rule @conflict_traffic_light_status
-trigger 
-    act ManageTrafficLightsStates
-prepare  
-    val light_states = invoke_action(CheckTrafficLightsStates, {"intersection_id":cur_act["intersection_id"]})
-check 
-    eq(light["light_states"]["traffic_id"],"vehicle-east-west")
-    eq(stat["light_states"]["traffic_light_state"], "green") 
-    eq(cur_action["traffic_id"], "pedestrain-north-west")
-    eq(cur_action["traffic_light_state"], "walk")
+trigger
+    state_change
+check
+    trafficlight_color(3)
 enforce
-    llm_self_reflect
+    real:scenario:traffic_light:Stopping_distance = 5
 end

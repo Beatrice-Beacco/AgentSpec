@@ -62,6 +62,26 @@ def load_schema(path=SCHEMA_PATH):
         return Schema.from_str(fh.read())
 
 
+def schema_for(policy_path):
+    """The nearest schema.cedarschema at or above a policy file.
+
+    A policy directory is (schema + policies), and S3.4 generates one per
+    domain -- the LLM one deliberately declaring a wider set of flags, since
+    those rules bring their own predicates. Validating everything against the
+    top-level schema would report those as unknown attributes when in fact they
+    are declared right beside them.
+    """
+    directory = os.path.dirname(os.path.abspath(policy_path))
+    while True:
+        candidate = os.path.join(directory, "schema.cedarschema")
+        if os.path.isfile(candidate):
+            return candidate
+        parent = os.path.dirname(directory)
+        if parent == directory or not directory.startswith(REPO_ROOT):
+            return SCHEMA_PATH
+        directory = parent
+
+
 def policy_files(paths=None):
     """The .cedar files to check: the arguments, or the whole policy tree."""
     if paths:
@@ -160,8 +180,18 @@ def main(argv=None):
 
     failed = 0
     for path in files:
-        ok, messages = check(path, schema)
-        print(f"{'ok  ' if ok else 'FAIL'}  {rel(path)}")
+        # Each policy is checked against the schema that governs its directory.
+        own = schema_for(path)
+        try:
+            against = schema if own == args.schema else load_schema(own)
+        except Exception as exc:                        # noqa: BLE001
+            print(f"FAIL  {rel(path)}\n"
+                  f"      its schema {rel(own)} does not parse: {exc}")
+            failed += 1
+            continue
+        ok, messages = check(path, against)
+        note = "" if own == args.schema else f"  [schema: {rel(own)}]"
+        print(f"{'ok  ' if ok else 'FAIL'}  {rel(path)}{note}")
         for message in messages:
             print(f"      {message}")
         failed += not ok

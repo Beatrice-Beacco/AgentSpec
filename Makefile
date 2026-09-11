@@ -5,17 +5,17 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PYTEST := $(VENV)/bin/pytest
 
-.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-freeze profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
+.PHONY: help test test-verbose test-why test-enforcement test-parsing test-schema test-cedar audit audit-full audit-freeze audit-full-freeze compile-corpus coverage coverage-freeze grammar profile profile-freeze profile-cedar profile-cedar-freeze spikes spike-hello spike-annotations spike-validation spike-latency validate sensors schema golden ui venv clean
 
 help:  ## show this help
 	@grep -hE '^[a-z-]+:.*?##' $(MAKEFILE_LIST) \
-		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	 | awk 'BEGIN{FS=":.*?## "}{printf " \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 $(PYTEST):
 	@echo "pytest not installed in $(VENV) - installing from requirements-dev.txt"
 	@$(VENV)/bin/pip install -q -r requirements-dev.txt
 
-test: $(PYTEST)  ## run the whole suite (expect: 445 passed, 13 xfailed)
+test: $(PYTEST)  ## run the whole suite (expect: 541 passed, 13 xfailed)
 	@$(PYTEST) -q
 
 test-verbose: $(PYTEST)  ## run with the agent trace + outcome blocks
@@ -82,14 +82,36 @@ profile-freeze:  ## regenerate docs/baseline-latency.md (thesis evidence)
 
 profile-cedar:  ## time the Cedar engine (S2.9): sensors vs. decision
 	@rm -f expres/latency/cedar.jsonl
-	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl 	 AGENTGUARD=cedar $(PYTEST) -q >/dev/null
+	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl AGENTGUARD=cedar $(PYTEST) -q >/dev/null
 	@$(PY) tools/latency_report.py expres/latency/cedar.jsonl --engine cedar
 
 profile-cedar-freeze:  ## regenerate docs/cedar-latency.md (thesis evidence)
 	@rm -f expres/latency/cedar.jsonl
-	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl 	 AGENTGUARD=cedar $(PYTEST) -q >/dev/null
+	@AGENTSPEC_PROFILE=1 AGENTSPEC_PROFILE_PATH=expres/latency/cedar.jsonl AGENTGUARD=cedar $(PYTEST) -q >/dev/null
 	@$(PY) tools/latency_report.py expres/latency/cedar.jsonl --engine cedar > docs/cedar-latency.md
 	@echo "wrote docs/cedar-latency.md"
+
+audit-full:  ## audit the corpus with the permissive grammar (S3.1)
+	@$(PY) tools/audit_rules.py src --grammar full
+
+audit-full-freeze:  ## regenerate docs/corpus-audit-full.md
+	@$(PY) tools/audit_rules.py src --grammar full 2>/dev/null > docs/corpus-audit-full.md
+	@echo "wrote docs/corpus-audit-full.md"
+
+compile-corpus:  ## compile the rule corpus into policies/generated/ (S3.4)
+	@$(PY) tools/compile_corpus.py
+
+coverage:  ## print the RQ1 coverage report (needs `make compile-corpus` first)
+	@$(PY) tools/coverage_report.py
+
+coverage-freeze:  ## recompile the corpus and regenerate docs/coverage.md (RQ1)
+	@$(PY) tools/compile_corpus.py --quiet
+	@$(PY) tools/coverage_report.py > docs/coverage.md
+	@echo "wrote docs/coverage.md"
+
+grammar:  ## regenerate the permissive parser (needs Java; jar is in the repo)
+	@java -jar src/spec_lang/antlr-4.13.2-complete.jar -Dlanguage=Python3 -o agentguard/speclang agentguard/speclang/AgentSpecFull.g4
+	@echo "regenerated agentguard/speclang/AgentSpecFull*.py"
 
 audit-freeze:  ## regenerate docs/baseline-audit.md (thesis evidence)
 	@$(PY) tools/audit_rules.py src > docs/baseline-audit.md 2>/dev/null

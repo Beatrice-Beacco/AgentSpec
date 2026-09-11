@@ -17,7 +17,7 @@
 - ⭐ marks the two sprints that carry the thesis contribution. **Protect their time.**
   If we fall behind, cut Sprint 3 (compiler) and Sprint 6b (portability) first.
 
-**Current position:** Sprint 2 complete. Next: Sprint 3, Step S3.1 (grammar fixes) — or cut Sprint 3 per the risk table and go straight to Sprint 4.
+**Current position:** Sprint 3 complete (RQ1 answered: **18/62**). Next: Sprint 4, Step S4.1.
 
 ---
 
@@ -265,7 +265,7 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       `engine.load()` on disk, so Cedar reassigns the positional synthetic ids each
       time; a resolution keyed on those would break here.
       Sensor order is checked too (thesis §C.4 claims both).
-      *Accept:* ✅ `tests/test_order_independence.py` (7 tests) + the counterexample
+      *Accept:* ✅ `tests/test_order_independence.py` (8 tests) + the counterexample
       table in [`docs/findings.md`](docs/findings.md).
 - [x] **S2.9** Re-run the latency instrumentation with the Cedar engine. ✅ 2026-09-06
       Added the `cedar_decide` phase deferred from S1.7, and an `engine` tag per step —
@@ -308,27 +308,80 @@ confirmed. Seven corpus defects are written up in [`docs/findings.md`](docs/find
 
 Goal: bring the existing rule corpus across automatically. **Cuttable if behind.**
 
-- [ ] **S3.1** Fix the grammar defects found in the audit, in `src/spec_lang/AgentSpec.g4`:
-      `//` and `/* */` comments; `&` and `|` in `check`; dotted and multi-word triggers;
-      `IDENTIFIER` predicates instead of the closed 36-alternative token; align
-      `llm_self_examine` / `llm_self_reflect`.
-      ⚠️ Needs Java to regenerate the parser: `cd src && bash run.sh`.
-      *Accept:* `tools/audit_rules.py` reports **0 parse failures** across the corpus.
-- [ ] **S3.2** Fix `src/spec_lang/rule_examples/*.ar` (they use a dead older syntax) so
-      the repo's own unit test passes, or replace the fixtures.
-      *Accept:* `pytest` + `python -m unittest spec_lang.test_parse` both green.
-- [ ] **S3.3** `agentguard/compile.py` — an ANTLR listener implementing the mapping table
+- [x] **S3.1** Fix the grammar defects found in the audit ✅ 2026-09-10
+      — **as a second grammar, not by editing the shipped one.**
+      `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses:
+      `//` and `/* */` comments, `&` and `|`, dotted and multi-word triggers, open
+      predicate identifiers, `llm_self_examine`, `user_inspection("...")`, `trigger any`.
+      `src/spec_lang/AgentSpec.g4` is **untouched**, because what it rejects is a
+      measurement — repairing it would make "AgentSpec" mean a version we fixed in
+      every later experiment. Rationale in [`docs/findings.md`](docs/findings.md).
+      Java + the committed ANTLR jar: `make grammar`.
+      *Accept:* ~~0 parse failures~~ → **61 of 62 rules**, `make audit-full`.
+      Two reasons it is not 62, both findings rather than grammar gaps:
+      **D-8** two files contain unmarked prose between rules, so *whole-file* parsing
+      can never be clean; **D-9** one rule's check clause is an English sentence.
+      | grammar | rules parsed |
+      |---|---:|
+      | shipped (untouched) | **18 / 62** |
+      | full (ours) | **61 / 62** |
+- [x] **S3.2** Fix `src/spec_lang/rule_examples/*.ar` (they use a dead older syntax) so
+      the repo's own unit test passes, or replace the fixtures. ✅ 2026-09-10
+      **Replaced, and kept the originals** in `rule_examples/legacy/` with a README —
+      three example rules AgentSpec's own parser rejects is evidence, not clutter
+      (**D-10**). Four new fixtures, between them covering every construct the shipped
+      grammar implements: negation, `invoke_action`, `state_change`, `config`, a
+      parameterised predicate. **None carries a comment** — a single `//` makes the
+      file unparseable, so the explanation is in a README beside them.
+      Also fixed a second bug in the same test: its fixture path was the relative
+      string `'rule_examples/'`, so it could only run from `src/spec_lang` and died
+      with `FileNotFoundError` everywhere else — which is why nobody saw the three
+      failures.
+      *Accept:* ✅ `python -m unittest spec_lang.test_parse` green **from any
+      directory**; `pytest` green (495 passed).
+- [x] **S3.3** `agentguard/compile.py` — an ANTLR listener implementing the mapping table
       in thesis plan §C.6 (trigger→resource, check→context conditions,
-      enforce→effect + `@advice`).
-      *Accept:* compiling the smoke-test rule yields a policy that produces an identical verdict.
-- [ ] **S3.4** Compile the whole corpus: 42 shipped rules + the LLM-generated ones in
-      `src/rules/llm/generated_rules-{o1,4o}.jsonl`.
-      *Accept:* `policies/generated/` populated; all pass `validate_policies()`.
-- [ ] **S3.5** Write `docs/coverage.md`: how many rules compiled cleanly / with warnings /
+      enforce→effect + `@advice`). ✅ 2026-09-10
+      Parses with the S3.1 grammar into an IR, then emits. Every rule returns a
+      `Compiled` carrying either a policy or **every** reason it could not become one
+      — an apollo rule is blocked by trigger, predicate *and* enforcement at once, and
+      reporting only the first would understate the work.
+      *Accept:* ✅ the smoke-test rule compiles and gives an **identical verdict** to
+      the hand-written `core.cedar` — on the destructive input *and* the benign one.
+      **Corpus: 18/62 compile.** Largest blocker is D-3 (23 rules name a predicate
+      nothing registers), then `state_change` triggers (20) and `config` enforcement
+      (18). Full table in [`docs/findings.md`](docs/findings.md) — that is RQ1's raw
+      material for S3.5.
+      ⚠️ **The compiled corpus cannot be one policy set**: it mixes domains, and an
+      engine runs one. `Compiled.domain` partitions it; S3.4 writes one file per
+      domain.
+- [x] **S3.4** Compile the whole corpus: 42 shipped rules + the LLM-generated ones in
+      `src/rules/llm/generated_rules-{o1,4o}.jsonl`. ✅ 2026-09-10
+      `make compile-corpus` writes **one self-contained policy directory per domain**
+      (schema + baseline + rules), because an engine runs one domain's sensors and
+      refuses a policy it can never fire. Plus `coverage.json` for S3.5.
+      *Accept:* ✅ `policies/generated/{code,embodied,llm}/` populated; **4/4 files
+      validate** — `tools/validate_policies.py` now checks each against the schema in
+      its own directory.
+      **Shipped 18/62. LLM-generated 20/20 — and 0/20 if you do not count the
+      predicates they define themselves.** That contrast is the RQ1 headline.
+      ⚠️ `generated/llm/` **validates but will not load**: its schema declares the 22
+      flags those rules define, but no *sensor* produces them. The file says so.
+- [x] **S3.5** Write `docs/coverage.md`: how many rules compiled cleanly / with warnings /
       not at all, **with an analysis of every failure**. Failures are findings.
-      *Accept:* table + prose; this is thesis RQ1.
+      *Accept:* table + prose; this is thesis RQ1. ✅ 2026-09-10
+      `tools/coverage_report.py` generates it from `coverage.json` (`make coverage-freeze`),
+      so the prose cannot drift from the numbers; a test compares the published body
+      against a fresh render.
+      **18/62 compiled, 0 with warnings, 44 not at all**, every one categorised and
+      the full 62-row appendix included.
+      The 44 **partition into four groups** — 23 blocked only by an unregistered
+      predicate, 20 (the whole apollo corpus) blocked by two or three things at once,
+      1 unparseable. So the honest ceiling is **41/62**, not 61/62: the apollo rules
+      need planner-parameter assignment, which is configuration rather than access
+      control and is the one change this design should refuse.
 
-**Sprint 3 exit:** RQ1 answered with a number.
+**Sprint 3 exit:** ✅ RQ1 answered with a number — **18/62**, ceiling 41/62.
 
 ---
 
@@ -502,3 +555,8 @@ Goal: prove things about the policy set that no prior agent-guardrail system can
 | 2026-09-06 | S2.8 | M2 measured rather than argued. The same three guards — suppress / halt / pass-through — written once as AgentSpec rules and once as Cedar policies, under all six orderings: **AgentSpec produces 2 distinct verdicts, AgentGuard produces 1** (and 1 across 100 random shuffles). Nothing changes but the order they are listed in, so a reviewer reading an AgentSpec rule file cannot tell what the guard will do without also knowing the order — and neither can a tool, which is what blocks the Sprint 5 analysis for the baseline. Two things make it a real result rather than a tautology: every shuffle goes through `engine.load()` on disk, so Cedar reassigns the synthetic ids **by position** each time and a resolution keyed on them would break; and Cedar still does not return determining policies in source order, re-checked here, so "take the first" was never a defensible design. Also pinned sensor-order independence, which §C.4 claims alongside policy order — it holds now and would stop holding the moment a sensor gained a side effect another could observe. |
 | 2026-09-06 | S2.9 | Cedar profiled, and **two expectations the plan carried since S0.11 did not survive it**. The architectural claim did: `rule_parse` is exactly **0.0%** of AgentGuard's guard against **79.2%** of AgentSpec's. But (1) *"the policy engine is free; detection is the cost"* is **not supported at these input sizes** — detection 0.5104 ms against decision 0.5067 ms, within 1%. The slogan was extrapolated from S1.4's 0.058 ms spike, which used a 1-flag request with no schema and no entity store; on the real request the decision is 0.2341 ms, of which **passing the `Schema` on every call is +0.087 ms — over a third**, the entity store +0.029, and the 24 extra flags +0.039. So the decision cost is dominated by **marshalling across the Python/Rust boundary, not by evaluating policies**, which is both more useful and names an optimisation (hoist the parsed schema). And (2) **AgentGuard's guard total is 2.3× AgentSpec's** — reported plainly, because the cause is our S2.3 choice to materialise the whole domain (25 sensors per step vs the 1–2 AgentSpec names), not a cost Cedar imposes; S2.3 already measured the lever at 25→1. Methodological fix worth keeping: a profiling run builds executors of both kinds, so steps are now tagged with `engine` and the report filters — the first measurement blended them and showed a nonzero `rule_parse` under Cedar. Also pinned the report's output encoding: on Windows the `·` separator was being written as cp1252 and the frozen `.md` was not valid UTF-8. |
 | 2026-09-06 | S2.10 | Toggle and compare mode landed, and compare mode reproduced both known disagreements on its first run — example 1 (same verdict, *different decider*: `@block_file_deletion` vs `@no_destructive_os_call`) and example 3 (ALLOWED vs STOPPED, every row flagged). The toggle picks the executor class directly via a new `executor_cls=` argument rather than reading `$AGENTGUARD`, because compare mode builds one of each in the same process and mutating the environment around each build would be racy under a threaded server — that also removes a hidden global from the construction path. Added the raw positional `diagnostics.reasons` id beside the human `@id` in the Cedar panel: they differ exactly when the file is reordered, which is S2.8's claim made visible. One display bug found and fixed while checking it: in compare mode the Cedar panel measured agreement against *its own* verdict, so it always claimed to agree. **Sprint 2 exits complete.** |
+| 2026-09-10 | S3.1 | Took the **second-grammar** route rather than editing `src/spec_lang/AgentSpec.g4`, on the reasoning that the shipped grammar rejecting **44 of the 62 rules in its own repository** is a measurement, and repairing it in place would both erase the finding and make "AgentSpec" mean a version we fixed in every RQ2/RQ3 comparison afterwards. `agentguard/speclang/AgentSpecFull.g4` accepts every construct the corpus uses; `tools/audit_rules.py --grammar full|shipped` reports both, and `tests/test_full_grammar.py` asserts in **both directions** — that ours accepts each construct *and that the shipped one still rejects it*, so an edit to the baseline fails a test rather than passing silently. Result **61/62 rules**, not the planned 62: **D-8**, two files carry unmarked prose between rules (`=== below is security-related`, `case 20-23 The23andMe ????`) which is neither comment nor rule, so *whole-file* parsing can never be clean under any grammar without editing the corpus — coverage has to be measured per rule; and **D-9**, `@inspect_side_channel`'s check clause is an English sentence (`resources_that_provide_side_channel_info(e.g. how much time/power ...)`), which we decline to accept because accepting it means accepting prose. 61/62 is therefore the ceiling on S3.4. Also kept multi-word and dotted events apart in the parse tree: `getText()` would render `turn on` as `turnon`, silently mangling the trigger. |
+| 2026-09-10 | S3.2 | Replaced the fixtures, kept the originals under `rule_examples/legacy/`. **D-10: AgentSpec ships three example rules its own parser rejects**, and they are not typos — they describe a *more expressive* language than was implemented: an `act` keyword before the event, a `prepare` clause binding a tool call's result for later checks (which is path sensitivity, sketched and abandoned), string arguments to predicates, subscripting. A second, independent bug in the same test hid all of it: the fixture path was the relative string `'rule_examples/'`, so the test only ran with the cwd set to `src/spec_lang` and died with `FileNotFoundError` anywhere else. **A trap this left for S3.3:** our permissive grammar accepts multi-word events (added for `turn on`), so it now parses `trigger act CommandLine` — but as a *two-word event name*. A compiler taking the event verbatim would emit `Tool::"act CommandLine"` and match nothing, silently. Pinned by a test; the compiler must strip a leading `act`. Deliberately did **not** add `prepare` or string predicate arguments: no corpus rule uses either, so it would widen the compiler's input for nothing — which is why 1 of the 3 legacy fixtures now parses and 2 still do not. |
+| 2026-09-10 | S3.3 | Compiler landed; the smoke-test rule compiles to a policy that gives an **identical verdict** to the hand-written one, on both the destructive and the benign input — text equality would have been the wrong assertion, since two policies can be spelled differently and decide the same. **Corpus: 18/62.** Made it report *every* blocker rather than the first: 24 rules are stopped by one thing, 1 by two and **19 by three** — every apollo rule fails on its trigger, its predicate and its enforcement independently, so a first-blocker-only table would badly understate the work. The single largest cause is **D-3**, 23 rules naming a predicate nothing registers — rules that could not have fired in AgentSpec either, so this is a measurement of the corpus rather than of the compiler. Two things worth carrying forward: `check !p` compiles to "p ran and came back false", **not** "p is absent" — the latter would make the rule fire whenever nobody looked, inverting the author's intent; and **the compiled corpus cannot be a single policy set**, because it mixes domains (10 code, 1 embodied, 7 flagless) and an engine runs one — found by the S2.5 coverage check refusing to load it, which is that check paying for itself on real input. `Compiled.domain` now partitions them for S3.4. |
+| 2026-09-10 | S3.4 | Corpus compiled into `policies/generated/`, one self-contained directory per domain (schema + baseline + rules) so each is loadable as-is via `$AGENTGUARD_POLICIES`. **The RQ1 contrast is sharper than expected**: the shipped corpus compiles at **18/62**, the LLM-generated rules at **20/20** — and at **0/20** if you refuse to count the predicates they define themselves. Same compiler; the difference is entirely whether the rule shipped with the thing that observes the world. That is *not* evidence a model writes better guardrails than a person — it is evidence that a language whose predicates live somewhere else drifts from them (D-3), and the generator avoided that by construction. **Nothing executes the model-written Python**: predicate names come from `ast.parse`, and a test asserts it, because reading a data file and running one are a careless line apart. Second finding: `generated/llm/` **validates but will not load** — Cedar is satisfied because its schema declares those 22 flags, but the engine refuses a policy keyed on a flag no sensor materialises. Declaring a flag is not being able to observe it, and a directory that type-checks looks deployable; the generated header says so outright. `validate_policies` now uses the schema in each policy's own directory. |
+| 2026-09-10 | S3.5 | RQ1 answered: **18/62 compiled, 0 with warnings, 44 not**. Generated `docs/coverage.md` from `coverage.json` rather than writing it, so the analysis cannot drift from the numbers it describes — a test compares the published body against a fresh render, skipping the provenance header (which carries HEAD and today's date, and would otherwise fail the test on the very next commit). **The interesting result is not the 29% but the shape of the failures**: the 44 partition cleanly into four groups with nothing in between, and the cumulative ladder therefore has two rows that rescue **zero** rules. Adding `action state_change` to the schema is an afternoon's work and moves the number by nothing, because every rule needing it also needs planner-parameter assignment — `Min_stop_distance = 10`, which neither permits nor forbids anything but tunes a controller. That is configuration, not access control, and declining it is what makes the honest target **41/62 rather than 61/62**; the remaining 23 are pure labour (detectors nobody wrote, dead in AgentSpec too) and 1 is prose. Writing the generator found a **reproducibility bug in my own reporting**: `categories_of` returns a set, so tied counts ordered by string hash and the same input produced different Markdown per process — caught by the freshness test on its first run, fixed by breaking ties on name, and now byte-identical across processes. |

@@ -31,14 +31,23 @@ def parse(program):
 class TestAgentSpecParser(unittest.TestCase):
 
     def test_grammar_examples(self):
-        base = 'rule_examples/'
-        for f in os.listdir(base):
-            with open(base + f,'r') as r:
-                try :
+        # FIX (local): `base` was the relative string 'rule_examples/', so this
+        # test could only run with the cwd set to src/spec_lang -- from anywhere
+        # else it died with FileNotFoundError before parsing anything. Resolve
+        # it against this file instead.
+        base = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            'rule_examples')
+        # Only .ar files in this directory: `legacy/` holds the pre-grammar
+        # originals, which do not parse on purpose (see its README).
+        names = sorted(f for f in os.listdir(base) if f.endswith('.ar'))
+        assert names, f'no fixtures in {base}'
+        for f in names:
+            with open(os.path.join(base, f), 'r') as r:
+                try:
                     rule = r.read()
                     parse(rule)
-                except ValueError  as e: 
-                    assert False, str(e)
+                except ValueError as e:
+                    assert False, f'{f}: {e}' 
 
 if __name__ == "__main__":
     unittest.main()

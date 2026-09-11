@@ -1,0 +1,866 @@
+{
+  "llm": {
+    "compiled": 20,
+    "reason_counts": {},
+    "rules": [
+      {
+        "domain": null,
+        "id": "UserInspectionBeforeDirty",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#UserInspectionBeforeDirty",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "AvoidMisplaceLightedCandle",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#AvoidMisplaceLightedCandle",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "PreventBreakage",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#PreventBreakage",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "ProhibitThrowingObjects",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#ProhibitThrowingObjects",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "NoDropFragileValuableObjects",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#NoDropFragileValuableObjects",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "PreventUnsafeLiquidPouring",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#PreventUnsafeLiquidPouring",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "no_misuse_microwave",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#no_misuse_microwave",
+        "warnings": []
+      },
+      {
+        "domain": "embodied",
+        "id": "ProhibitNonHeatableOnStoveBurner",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#ProhibitNonHeatableOnStoveBurner",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "PreventInvalidFridgePut",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#PreventInvalidFridgePut",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "Prohibit_Putting_Into_Wine_Filled_Container",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-4o.jsonl#Prohibit_Putting_Into_Wine_Filled_Container",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "AskForUserInspectionBeforeDirtyObjects",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#AskForUserInspectionBeforeDirtyObjects",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "AvoidLightedCandleMisplacement",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#AvoidLightedCandleMisplacement",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "prohibit_break",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#prohibit_break",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "prohibit_throwing_objects",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#prohibit_throwing_objects",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "NoFragileValuableDrop",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#NoFragileValuableDrop",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "no_pour_liquids",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#no_pour_liquids",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "microwaveMisuse",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#microwaveMisuse",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "NoPuttingNonHeatSafeObjectsOnStoveBurner",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#NoPuttingNonHeatSafeObjectsOnStoveBurner",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "NoNonFoodObjectsInFridge",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#NoNonFoodObjectsInFridge",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "NoPutIntoWineContainer",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/llm/generated_rules-o1.jsonl#NoPutIntoWineContainer",
+        "warnings": []
+      }
+    ],
+    "total": 20
+  },
+  "llm_flags_defined": [
+    "is_break",
+    "is_break_action",
+    "is_dirty_action",
+    "is_dirty_with_inspection",
+    "is_drop",
+    "is_forbidden_in_fridge",
+    "is_fragile_or_valuable",
+    "is_invalid_fridge_put",
+    "is_lighted_candle",
+    "is_microwave",
+    "is_misplaced_candle",
+    "is_misuse_microwave",
+    "is_non_heatable",
+    "is_non_heatsafe_stoveburner",
+    "is_on_stoveburner",
+    "is_pour",
+    "is_put_in_wine_container",
+    "is_throw",
+    "is_throw_action",
+    "is_unsafe_pour",
+    "is_wine_filled",
+    "no_drop_fragile_valuable"
+  ],
+  "shipped": {
+    "compiled": 18,
+    "reason_counts": {
+      "does not parse: L5:63 token recognition error at: '/p'": 1,
+      "enforcement is 1 `config` assignment(s)": 7,
+      "enforcement is 2 `config` assignment(s)": 5,
+      "enforcement is 3 `config` assignment(s)": 2,
+      "enforcement is 4 `config` assignment(s)": 2,
+      "enforcement is 5 `config` assignment(s)": 4,
+      "no registered sensor produces access_clipboard": 1,
+      "no registered sensor produces backtracking_regex_pattern": 1,
+      "no registered sensor produces capture_screenshot": 1,
+      "no registered sensor produces check_process_status": 1,
+      "no registered sensor produces contain_exec_string": 2,
+      "no registered sensor produces contain_sensitive_information": 1,
+      "no registered sensor produces hash_with_constant_salt": 1,
+      "no registered sensor produces is_delete": 1,
+      "no registered sensor produces is_fair": 1,
+      "no registered sensor produces is_holding_none_microwave_obj": 1,
+      "no registered sensor produces is_malware": 1,
+      "no registered sensor produces is_permenant": 1,
+      "no registered sensor produces is_putting_hot_things": 1,
+      "no registered sensor produces is_risky_device_action_pair": 1,
+      "no registered sensor produces is_update": 1,
+      "no registered sensor produces kill_process": 1,
+      "no registered sensor produces lower_privilege": 1,
+      "no registered sensor produces match_without_default_case": 1,
+      "no registered sensor produces memory_leackage": 1,
+      "no registered sensor produces monitor_file_system_event": 1,
+      "no registered sensor produces predictable_constant": 1,
+      "no registered sensor produces reputation_damage": 1,
+      "parameterised predicate egospeedH": 2,
+      "parameterised predicate egospeedL": 3,
+      "parameterised predicate is_e_stop": 1,
+      "parameterised predicate o_f_disL(...)": 1,
+      "parameterised predicate snow(...)": 1,
+      "parameterised predicate stop_disL(...)": 1,
+      "parameterised predicate traffic_light_disL": 8,
+      "parameterised predicate v_f_disL(...)": 2,
+      "triggers on state_change": 20
+    },
+    "rules": [
+      {
+        "domain": null,
+        "id": "stop_dirtying_objects",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/embodied.ar#stop_dirtying_objects",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "stop_break_things",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/embodied.ar#stop_break_things",
+        "warnings": []
+      },
+      {
+        "domain": "embodied",
+        "id": "stop_turn_on_candles",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/embodied.ar#stop_turn_on_candles",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "prevent_explosion_in_microwave",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_holding_none_microwave_obj"
+        ],
+        "source": "agentspec:src/rules/manual/embodied.ar#prevent_explosion_in_microwave",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "stop_put_hot_things_into_frigde",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_putting_hot_things"
+        ],
+        "source": "agentspec:src/rules/manual/embodied.ar#stop_put_hot_things_into_frigde",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "is_malware",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_malware"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#is_malware",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "submit_system_info",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#submit_system_info",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "download_from_untrusted",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#download_from_untrusted",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "manipulate_system_file",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#manipulate_system_file",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "leak_system_dir",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#leak_system_dir",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "write_encoded_content",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#write_encoded_content",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "read_system_file",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#read_system_file",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "desctuct_system_file",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#desctuct_system_file",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "write_dangerous_content",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces contain_exec_string"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#write_dangerous_content",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "execute_external_content",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#execute_external_content",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "print_screenshot",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces capture_screenshot"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#print_screenshot",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "print_clipboard",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces access_clipboard"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#print_clipboard",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "print_fs_event",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces monitor_file_system_event"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#print_fs_event",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "print_process_status",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces check_process_status"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#print_process_status",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "print_process_status",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_fair"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#print_process_status",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_executable",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces contain_exec_string"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_executable",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "regex_backtracking_vulnerability",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces backtracking_regex_pattern"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#regex_backtracking_vulnerability",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_side_channel",
+        "ok": false,
+        "reasons": [
+          "does not parse: L5:63 token recognition error at: '/p'"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_side_channel",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_privilege_escape",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces lower_privilege, raise_privilege"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_privilege_escape",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_process_kill",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces kill_process"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_process_kill",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_predicable_random_seed",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces predictable_constant, set_random_seed"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_predicable_random_seed",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "hash_with_constant_salt",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces hash_with_constant_salt"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#hash_with_constant_salt",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "match_without_default_case",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces match_without_default_case"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#match_without_default_case",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "inspect_aribitrary_code_execution",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#inspect_aribitrary_code_execution",
+        "warnings": []
+      },
+      {
+        "domain": "code",
+        "id": "output_from_untrusted_source",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#output_from_untrusted_source",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "memory_leackage",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces memory_leackage"
+        ],
+        "source": "agentspec:src/rules/manual/pythonrepl.ar#memory_leackage",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_delete",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_delete",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "stop_reputation_damage",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces reputation_damage"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#stop_reputation_damage",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "stop_post_sensitive_information",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces contain_sensitive_information"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#stop_post_sensitive_information",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_permenant_access",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_permenant"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_permenant_access",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_dangerous_lock_action",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_dangerous_lock_action",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_binance",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_binance",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_google_control_device_actions",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_risky_device_action_pair"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_google_control_device_actions",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_privacy_setting",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_privacy_setting",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_update_price",
+        "ok": true,
+        "reasons": [],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_update_price",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_manage_patient_records",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_delete"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_manage_patient_records",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "inspect_manage_patient_records",
+        "ok": false,
+        "reasons": [
+          "no registered sensor produces is_update"
+        ],
+        "source": "agentspec:src/rules/manual/toolemu.ar#inspect_manage_patient_records",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s1_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 5 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate v_f_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S1.rule#s1_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s1_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S1.rule#s1_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s2_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S2.rule#s2_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s2_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S2.rule#s2_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s3_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 5 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S3.rule#s3_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s3_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 5 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S3.rule#s3_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s3_3",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 5 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S3.rule#s3_3",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s4_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 4 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action"
+        ],
+        "source": "agentspec:src/rules/apollo/S4.rule#s4_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s5_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S5.rule#s5_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s5_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 2 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate traffic_light_disL, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S5.rule#s5_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s5_3",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate is_e_stop, trafficlight_color(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S5.rule#s5_3",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s6_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 3 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate egospeedH, v_f_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S6.rule#s6_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s6_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 3 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate egospeedL, v_f_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S6.rule#s6_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s6_3",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate egospeedL, is_fast_lane(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S6.rule#s6_3",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s7_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 2 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate egospeedL, is_fast_lane(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S7.rule#s7_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s7_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 2 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate egospeedH, is_fast_lane(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S7.rule#s7_2",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s7_3",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 1 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate v_f_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S7.rule#s7_3",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s8_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 2 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate snow(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S8.rule#s8_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s9_1",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 2 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate o_f_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S9.rule#s9_1",
+        "warnings": []
+      },
+      {
+        "domain": null,
+        "id": "s9_2",
+        "ok": false,
+        "reasons": [
+          "triggers on state_change, and the schema declares only `action invoke`",
+          "enforcement is 4 `config` assignment(s), which Cedar has no equivalent for -- they set planner parameters rather than guard an action",
+          "parameterised predicate stop_disL(...) -- sensors are nullary, so there is no flag to test"
+        ],
+        "source": "agentspec:src/rules/apollo/S9.rule#s9_2",
+        "warnings": []
+      }
+    ],
+    "total": 62
+  },
+  "written": {
+    "code": 17,
+    "embodied": 8,
+    "llm": 20
+  }
+}

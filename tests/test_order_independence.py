@@ -142,40 +142,62 @@ def test_the_join_is_the_most_restrictive_not_the_first_listed(tmp_path):
     assert ag_advice.rank(ag_advice.STOP) < ag_advice.rank(ag_advice.SKIP)
 
 
+def test_the_determining_policies_are_a_set_not_a_sequence(tmp_path):
+    """Half one: *which* policies determined the decision is stable.
+
+    `diagnostics.reasons` is documented as the policies that determined the
+    decision, not as an ordering of them. This pins the half that must not
+    move -- the same three policies decide it every time -- across full loads
+    from disk, which reassign the synthetic ids by position each time.
+
+    Half two, that their *order* is genuinely unspecified, is the test below.
+    Together they are the "set, not sequence" claim, and the join
+    (`tests/test_advice.py` has its algebra) is what makes half two harmless.
+    """
+    # Five is enough to make the point; each iteration is a full load from
+    # disk, and the 100-shuffle test above already covers stability at volume.
+    orders = set()
+    for _ in range(5):
+        verdict = decide_with([BASELINE] + POLICIES, tmp_path)
+        assert len(verdict.policy_ids) == 3
+        assert verdict.advice == ag_advice.STOP
+        orders.add(tuple(sorted(c.policy for c in verdict.resolution.contributing)))
+
+    assert orders == {("ask", "halt", "suppress")}, (
+        "the *set* of determining policies must be stable even though their "
+        "order is not")
+
+
 #: How many times to ask the same question below. `diagnostics.reasons` comes
-#: out of a hash set, so a single sample settles nothing: one of the six
-#: orderings of three ids *is* source order, and asserting "not sorted" on one
-#: draw fails about one run in six. It did, on master. Repeating instead turns
-#: the flake into the actual property -- 25 identical answers would mean Cedar
-#: had become deterministic, which is the only thing worth failing over.
+#: out of a hash set, and all six orderings of three ids come back roughly
+#: uniformly -- so one sample settles nothing, and the `ids != sorted(ids)`
+#: assertion this file started from failed about one run in six. You cannot
+#: show a value is unspecified by sampling it once; you can by sampling it
+#: often enough. 25 identical answers would mean Cedar had become
+#: deterministic, which is the only outcome here worth failing over.
 REASON_SAMPLES = 25
 
 
 def test_cedar_does_not_promise_an_order_for_the_determining_policies(tmp_path):
-    """The reason the join exists at all (docs/spikes.md S1.2).
+    """Half two, and the reason the join exists at all (docs/spikes.md S1.2).
 
     If Cedar listed the determining policies in *any* defined order -- source
     order, say -- then "take the first" would be a defensible (if fragile)
     design. It does not: one policy set, one request, asked repeatedly, comes
     back ordered differently each time. There is no first to take.
 
-    Which policies determined the decision is of course stable; only their
-    order is not. Both halves are asserted, because it is the second one alone
-    that the lattice exists to absorb.
+    Stability of the *set* belongs to the test above; this one watches only
+    the order, and one load is therefore enough.
     """
     bundle = load_from([BASELINE] + POLICIES, tmp_path)
-    orders = [tuple(engine.decide(bundle, state_for()).policy_ids)
-              for _ in range(REASON_SAMPLES)]
+    orders = {tuple(engine.decide(bundle, state_for()).policy_ids)
+              for _ in range(REASON_SAMPLES)}
 
-    assert all(len(ids) == 3 for ids in orders)
-    assert all(set(ids) == set(orders[0]) for ids in orders), (
-        "the set of determining policies changed between identical requests; "
-        "that is a Cedar bug, not an ordering question")
-    assert len(set(orders)) > 1, (
-        f"Cedar returned {orders[0]} on all {REASON_SAMPLES} identical "
-        "requests. The property under test is unaffected -- the join does not "
-        "care whether the order is stable -- but docs/spikes.md S1.2 says the "
-        "order is unspecified, and that claim now needs re-checking")
+    assert len(orders) > 1, (
+        f"Cedar returned {next(iter(orders))} on all {REASON_SAMPLES} "
+        "identical requests. The property under test is unaffected -- the join "
+        "does not care whether the order is stable -- but docs/spikes.md S1.2 "
+        "says the order is unspecified, and that claim now needs re-checking")
 
 
 # ------------------------------------------------- sensors: also independent

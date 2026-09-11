@@ -227,9 +227,247 @@ regression.
 The answer is bounded on the enforcement side as well as the predicate side, and
 `docs/coverage.md` (S3.5) needs both numbers.
 
+## D-8 · Two corpus files contain prose that is neither comment nor rule
+
+*Found 2026-09-10 during S3.1.*
+
+`pythonrepl.ar` line 171 and `toolemu.ar` line 76 carry bare text between rules:
+
+```
+=== below is security-related
+case 20-23 The23andMe ????
+```
+
+Neither is a comment — the shipped grammar has no comment token at all, and even
+a grammar that has one would not skip these, because they are not marked as
+comments. They are editing notes left in a file that is supposed to be source.
+
+**Why it matters.** Whole-file parsing can never reach zero errors on this
+corpus, under any grammar, without editing the corpus. So compiler coverage has
+to be measured **per rule** — splitting on `rule @` and trimming at each rule's
+own `end` — which is how `tools/audit_rules.py` B.1b and S3.3 both read it.
+
+## D-9 · One "rule" is an English sentence
+
+*Found 2026-09-10 during S3.1.*
+
+`@inspect_side_channel` in `pythonrepl.ar`:
+
+```
+check
+    resources_that_provide_side_channel_info(e.g. how much time/power to execute code )
+```
+
+That is a predicate name followed by a parenthesised sentence — `e.g.` has dots,
+`time/power` has a slash. It is the single rule in the corpus that our permissive
+grammar rejects, and rightly: accepting it would mean accepting arbitrary prose.
+
+It is the ceiling on S3.4. **61 of 62 rules can be compiled; the 62nd was never
+written in the language.**
+
+## D-10 · AgentSpec ships three example rules its own parser rejects
+
+*Found 2026-09-10 during S3.2.*
+
+`src/spec_lang/rule_examples/` held three `.ar` files, and
+`src/spec_lang/test_parse.py` exists to parse them. **All three fail.** They are
+preserved unmodified in `rule_examples/legacy/`.
+
+They are not typos. They describe a **more expressive language than was ever
+implemented**:
+
+| construct | example | what the grammar has |
+|---|---|---|
+| `act` before the event | `trigger act TerminalExecute` | `event` is a bare identifier — `act` is taken as the event and the real name is extraneous |
+| a `prepare` clause | `prepare val light_states = invoke_action(...)` | `rule` has four clauses; there is no fifth |
+| string arguments to a predicate | `llm_judge(cur_action["command"], "Return true if it is risky")` | `predicate_func: IDENTIFIER LPAREN number RPAREN` — one argument, and it must be a number |
+| subscripting | `light["light_states"]["traffic_id"]` | `value` supports it; `predicate` cannot reach `value` |
+
+`prepare` binds the result of a tool call so later checks can read it — that is
+path sensitivity, sketched and abandoned. `llm_judge` passes a natural-language
+question to a model. Both are real ideas; neither reaches the grammar or the
+runtime.
+
+**A second, independent bug in the same test.** Its fixture path was the
+relative string `'rule_examples/'`, so it could only run with the working
+directory set to `src/spec_lang` — from anywhere else it died with
+`FileNotFoundError` before parsing a single rule. So the test never reported the
+three failures above to anyone who ran it normally. Fixed locally to resolve
+against `__file__`.
+
+### The trap this left for the compiler
+
+Our permissive grammar accepts multi-word events, for `embodied.ar`'s
+`turn on`. As a side effect it now parses `trigger act CommandLine` — but as a
+**two-word event name**, not as a keyword plus a tool. A compiler that took the
+event verbatim would emit `Tool::"act CommandLine"`, which matches nothing and
+would fail silently.
+
+Pinned by `test_the_full_grammar_recovers_one_of_them_but_reads_it_differently`.
+S3.3 has to strip a leading `act`, and this is why 1 of the 3 legacy fixtures
+parses under the full grammar while the other two do not: `prepare` and string
+predicate arguments were deliberately **not** added, since no corpus rule uses
+either.
+
 ---
 
 ## Observations on the design (not corpus defects)
+
+### The LLM-generated rules compile at 20/20, and the reason is the finding — S3.4
+
+`src/rules/llm/generated_rules-{o1,4o}.jsonl` are not DSL text. Each record
+carries a trigger, an enforcement, and **the Python source of its own
+predicates**. Same compiler, wildly different result:
+
+| corpus | rules | compile |
+|---|---:|---:|
+| shipped `.ar` / `.rule` | 62 | **18** (29%) |
+| LLM-generated | 20 | **20** (100%) |
+| LLM-generated, *not* counting the predicates they define | 20 | **0** |
+
+The last row is the point. The generated rules compile because they bring their
+detector with them; the human-written corpus mostly does not compile because it
+names predicates nothing registers (D-3). The compiler is the same in both
+cases — the difference is entirely whether the rule shipped with the thing that
+observes the world.
+
+That is worth saying carefully in the write-up. It is **not** evidence that a
+model writes better guardrails than a person. It is evidence that a rule
+language whose predicates live somewhere else drifts from them, and that the
+generator avoided the problem by construction rather than by care.
+
+**Nothing executes that Python.** Predicate names come from `ast.parse`. A test
+asserts it, because "read a data file to find out what its functions are called"
+and "run a data file" are one careless line apart.
+
+### Validating and loading are different claims — S3.4
+
+`policies/generated/llm/` **validates and will not load**, and both halves are
+correct:
+
+* Cedar is satisfied — the schema beside those policies declares the 22 flags
+  the generated predicates define, so every attribute exists.
+* The engine refuses — `agentguard.engine.load` rejects a policy keyed on a flag
+  no **sensor** will ever materialise, and none of these has one.
+
+Declaring a flag is not the same as being able to observe it. The generated file
+says so in its own header, because a directory that type-checks looks deployable
+and is not.
+
+To actually deploy them you would register the generated predicates in the
+sensor registry — which means deciding to execute model-written Python. Nothing
+in the toolchain makes that decision for you.
+
+### The compiler, and why 18 of 62 is the honest number — S3.3
+
+`agentguard/compile.py` implements the §C.6 mapping. Every rule comes back as a
+`Compiled` carrying either a policy or **every** reason it could not become one —
+not the first reason, because an apollo rule is blocked by its trigger, its
+predicate *and* its enforcement independently, and a table showing only the first
+would understate what bringing it across takes.
+
+| | rules |
+|---|---:|
+| compiled to a Cedar policy | **18** |
+| blocked by exactly one thing | 24 |
+| blocked by two | 1 |
+| blocked by three | 19 |
+| **total** | **62** |
+
+The blockers, in order of how many rules they stop:
+
+| blocker | rules | why |
+|---|---:|---|
+| names a predicate nothing registers | 23 | D-3 in force — the `.ar` corpus and the executable table disagree |
+| triggers on `state_change` | 20 | the schema declares one action, `invoke` |
+| `config` enforcement | 18 | apollo's planner-parameter assignments have no Cedar equivalent |
+| parameterised predicate `p(10)` | 19 | sensors are nullary; there is no flag to test |
+| `enforce none` | 1 | the rule matches and chooses not to act |
+| does not parse | 1 | D-9, the English-sentence check clause |
+
+**Read this as a measurement of the corpus, not of the compiler.** The
+single largest cause is that the corpus names predicates that were never
+registered — a rule that could not have fired in AgentSpec either. Compiling it
+would produce a policy that cannot fire for the same reason, which is why the
+engine's coverage check (S2.5) refuses it rather than emitting it.
+
+### `check !p` does not mean "p is absent" — S3.3
+
+Under the record schema there are three states, and AgentSpec's `!p` maps to the
+middle one:
+
+    context.flags has p && !context.flags.p     p ran and came back false   <- this
+    !(context.flags has p)                      nobody looked
+
+Compiling `!p` to the second would make the rule fire whenever the sensor had not
+run, which inverts the author's intent. Cheap to get wrong, and invisible
+afterwards.
+
+### The compiled corpus cannot be one policy set — S3.3
+
+Found by the engine refusing to load it. An engine runs **one domain's** sensors
+(S2.3) and refuses to start on a policy keyed on a flag it will never
+materialise (S2.5). The compiled corpus mixes domains — 10 code, 1 embodied, 7
+that read no flags at all — so it has to be written as one file per domain.
+
+That is the startup coverage check paying for itself on real input, and it is
+the shape S3.4 has to generate.
+
+### Two grammars, and why the shipped one is not repaired — S3.1
+
+The plan's S3.1 says to fix `src/spec_lang/AgentSpec.g4` in place. We did not,
+and the reasoning is worth stating because it shapes what every later number
+means.
+
+The shipped grammar rejects **44 of the 62 rules in its own repository**.
+Repairing it in place would:
+
+* turn that measurement into history — the finding only exists while the
+  artifact does;
+* make "AgentSpec" in every RQ2/RQ3 experiment mean *a version we fixed*, which
+  is a baseline nobody ships.
+
+Instead there are two grammars:
+
+| | grammar | corpus rules parsed |
+|---|---|---:|
+| shipped | `src/spec_lang/AgentSpec.g4` — untouched | **18 / 62** |
+| full | `agentguard/speclang/AgentSpecFull.g4` — ours | **61 / 62** |
+
+`tools/audit_rules.py --grammar full|shipped` produces both, and
+`tests/test_full_grammar.py` asserts in both directions: that the full grammar
+accepts every construct the corpus uses, **and that the shipped one still
+rejects them**. If that second assertion ever fails, someone has edited the
+baseline and every "AgentSpec cannot express this" claim needs rechecking.
+
+The counter-argument is real and should be acknowledged in the write-up: a
+baseline whose parser rejects most of its own corpus is a weak opponent, and
+beating it proves less than beating a repaired one. The answer is that the
+repaired version is not the published system, and RQ1 is precisely the question
+*how much of the corpus survives the trip* — which is only meaningful measured
+against what was actually shipped.
+
+What the full grammar adds, and the corpus file that forced each:
+
+| construct | forced by |
+|---|---|
+| `//` and `/* */` comments | all three `.ar` files |
+| `True` / `False` capitalised | `toolemu.ar` |
+| dotted events `Gmail.SendMail` | `toolemu.ar` |
+| alternation `A \| B \| C` | `toolemu.ar` |
+| multi-word events `turn on` | `embodied.ar` |
+| open predicate names | the shipped grammar hard-codes 36 in the *lexer* |
+| `llm_self_examine` | `toolemu.ar`; the shipped token is `llm_self_reflect` |
+| `user_inspection("...")` | `toolemu.ar` |
+| `&` between checks | `apollo/*.rule` |
+| `trigger any` | `ANY` is declared in the shipped grammar and never used |
+
+One design note: the parse tree keeps multi-word and dotted events *apart*
+rather than concatenating. `getText()` on a multi-word trigger would produce
+`turnon`, which is how the shipped runtime would have silently mangled `turn on`
+had it parsed at all.
+
+
 
 ### Cedar fails open unless you make it fail closed — S1.7
 
@@ -376,6 +614,39 @@ comparison is between the phases, never against the total.
 
 Reproduce: `make profile-freeze` and `make profile-cedar-freeze`.
 
+### A test of my own that could not be right — S3.4
+
+`test_cedar_still_does_not_list_determining_policies_in_source_order` asserted
+`ids != sorted(ids)`, on the strength of S1.2 having observed Cedar return
+`['policy2', 'policy1']`. It failed intermittently, because Cedar's ordering is
+**unspecified, not reversed** — sometimes it coincides with source order. Both
+of us hit it independently, on master and on `dev-bea`, within a day of each
+other; sampling settled the rate at **one run in six**, which is what you would
+expect if all six orderings of three determining policies are equally likely.
+They are: 60 identical requests put roughly ten in each bucket.
+
+You cannot establish that a value is unspecified by sampling it once, and a test
+that tries makes the suite flaky, which is worse than not having the test. But
+you *can* establish it by sampling often enough, and the two halves of the claim
+are worth separating, so the merged file asserts both:
+
+| test | asserts | samples |
+|---|---|---:|
+| `test_the_determining_policies_are_a_set_not_a_sequence` | the *set* is stable, across reloads that reassign the ids by position | 5 |
+| `test_cedar_does_not_promise_an_order_for_the_determining_policies` | the *order* genuinely varies | 25 |
+
+The second is a canary, not a property the design needs: the join does not care
+whether Cedar's ordering is stable. It fails only if Cedar becomes
+deterministic, which would mean S1.2's claim in `docs/spikes.md` needs
+re-checking — and it says so in its own failure message. At 25 samples a false
+failure runs at about 6⁻²⁴.
+
+Worth recording because the failure was diagnostically useful: the assertion
+message written for the original ("Cedar happened to return source order this
+time; the property under test is unaffected") turned out to be exactly right,
+and saying so in the message is what made an intermittent flake diagnosable in
+one run rather than three.
+
 ### Order independence, measured — S2.8
 
 Thesis claim M2, as a counterexample rather than an argument. The same three
@@ -427,7 +698,7 @@ Sensor order is independent too, checked the same way: shuffling the order the
 holding the moment a sensor acquired a side effect another could observe, which
 is why it is pinned rather than assumed.
 
-Reproduce: `tests/test_order_independence.py` (7 tests).
+Reproduce: `tests/test_order_independence.py` (8 tests).
 
 ### Where policy lives, decided — S2.7
 

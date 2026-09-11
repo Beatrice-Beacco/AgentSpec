@@ -1,0 +1,8 @@
+rule @substitute_safer_call
+trigger
+    PythonREPL
+check
+    involve_system_dir
+enforce
+    invoke_action(safe_list, {"path": "."})
+end
