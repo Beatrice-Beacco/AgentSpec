@@ -618,21 +618,34 @@ Reproduce: `make profile-freeze` and `make profile-cedar-freeze`.
 
 `test_cedar_still_does_not_list_determining_policies_in_source_order` asserted
 `ids != sorted(ids)`, on the strength of S1.2 having observed Cedar return
-`['policy2', 'policy1']`. It failed roughly one run in ten, because Cedar's
-ordering is **unspecified, not reversed** — sometimes it coincides with source
-order.
+`['policy2', 'policy1']`. It failed intermittently, because Cedar's ordering is
+**unspecified, not reversed** — sometimes it coincides with source order. Both
+of us hit it independently, on master and on `dev-bea`, within a day of each
+other; sampling settled the rate at **one run in six**, which is what you would
+expect if all six orderings of three determining policies are equally likely.
+They are: 60 identical requests put roughly ten in each bucket.
 
 You cannot establish that a value is unspecified by sampling it once, and a test
-that tries makes the suite flaky, which is worse than not having the test. What
-is assertable, and is what the design actually rests on, is that the *set* of
-determining policies is stable and the resolved outcome does not depend on their
-order. That is now what it checks.
+that tries makes the suite flaky, which is worse than not having the test. But
+you *can* establish it by sampling often enough, and the two halves of the claim
+are worth separating, so the merged file asserts both:
+
+| test | asserts | samples |
+|---|---|---:|
+| `test_the_determining_policies_are_a_set_not_a_sequence` | the *set* is stable, across reloads that reassign the ids by position | 5 |
+| `test_cedar_does_not_promise_an_order_for_the_determining_policies` | the *order* genuinely varies | 25 |
+
+The second is a canary, not a property the design needs: the join does not care
+whether Cedar's ordering is stable. It fails only if Cedar becomes
+deterministic, which would mean S1.2's claim in `docs/spikes.md` needs
+re-checking — and it says so in its own failure message. At 25 samples a false
+failure runs at about 6⁻²⁴.
 
 Worth recording because the failure was diagnostically useful: the assertion
-message I had written for it ("Cedar happened to return source order this time;
-the property under test is unaffected") turned out to be exactly right, and
-saying so in the message is what made a one-in-ten flake diagnosable in one run
-rather than three.
+message written for the original ("Cedar happened to return source order this
+time; the property under test is unaffected") turned out to be exactly right,
+and saying so in the message is what made an intermittent flake diagnosable in
+one run rather than three.
 
 ### Order independence, measured — S2.8
 
@@ -674,16 +687,18 @@ Two details that make this a real result rather than a tautology:
   synthetic policy ids (`policy0`, `policy1`, …) **by position** each time. A
   resolution that keyed on those ids would break here, and an earlier design
   that took "the first determining policy" would have been reading them.
-* Cedar does not return determining policies in source order (docs/spikes.md
-  S1.2, re-checked by a test here). So "take the first" was never a defensible
-  design — it would have been sampling an unspecified ordering.
+* Cedar does not return determining policies in any fixed order — the same
+  request asked 25 times comes back ordered several different ways
+  (docs/spikes.md S1.2, re-checked by a test here). So "take the first" was
+  never a defensible design — it would have been sampling an unspecified
+  ordering, literally.
 
 Sensor order is independent too, checked the same way: shuffling the order the
 25 code sensors run in never changes the materialised flags. That would stop
 holding the moment a sensor acquired a side effect another could observe, which
 is why it is pinned rather than assumed.
 
-Reproduce: `tests/test_order_independence.py` (7 tests).
+Reproduce: `tests/test_order_independence.py` (8 tests).
 
 ### Where policy lives, decided — S2.7
 

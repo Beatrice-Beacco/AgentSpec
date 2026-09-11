@@ -265,7 +265,7 @@ Goal: a real, tested `agentguard/` package. No hard-coding left.
       `engine.load()` on disk, so Cedar reassigns the positional synthetic ids each
       time; a resolution keyed on those would break here.
       Sensor order is checked too (thesis §C.4 claims both).
-      *Accept:* ✅ `tests/test_order_independence.py` (7 tests) + the counterexample
+      *Accept:* ✅ `tests/test_order_independence.py` (8 tests) + the counterexample
       table in [`docs/findings.md`](docs/findings.md).
 - [x] **S2.9** Re-run the latency instrumentation with the Cedar engine. ✅ 2026-09-06
       Added the `cedar_decide` phase deferred from S1.7, and an `engine` tag per step —

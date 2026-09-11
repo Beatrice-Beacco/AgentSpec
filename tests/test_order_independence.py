@@ -71,15 +71,25 @@ def state_for(tool_input=DESTRUCTIVE_INPUT):
                      user_input="Delete the unimportant txt file")
 
 
-def decide_with(order, tmp_path):
-    """Write the policies in this order, load them for real, and decide."""
+def load_from(order, tmp_path):
+    """Write the policies in this order and load them for real.
+
+    The cache is cleared on both sides because `tmp_path` does not change
+    between calls within a test, and a cached bundle would hand back the
+    *previous* order's synthetic ids.
+    """
     (tmp_path / "schema.cedarschema").write_text(ag_schema.generate(),
                                                  encoding="utf-8")
     (tmp_path / "core.cedar").write_text("\n\n".join(order), encoding="utf-8")
     engine.load.cache_clear()
-    verdict = engine.decide(engine.load(str(tmp_path)), state_for())
+    bundle = engine.load(str(tmp_path))
     engine.load.cache_clear()
-    return verdict
+    return bundle
+
+
+def decide_with(order, tmp_path):
+    """Write the policies in this order, load them for real, and decide."""
+    return engine.decide(load_from(order, tmp_path), state_for())
 
 
 def outcome_of(verdict):
@@ -133,19 +143,16 @@ def test_the_join_is_the_most_restrictive_not_the_first_listed(tmp_path):
 
 
 def test_the_determining_policies_are_a_set_not_a_sequence(tmp_path):
-    """Why "take the first determining policy" was never a safe design.
+    """Half one: *which* policies determined the decision is stable.
 
     `diagnostics.reasons` is documented as the policies that determined the
-    decision, not as an ordering of them, and S1.2 observed it come back as
-    ['policy2', 'policy1'] -- not source order. It does not *always* differ,
-    though, and an earlier version of this test asserted `ids != sorted(ids)`,
-    which made the suite flaky roughly one run in ten: you cannot prove a value
-    is unspecified by sampling it once.
+    decision, not as an ordering of them. This pins the half that must not
+    move -- the same three policies decide it every time -- across full loads
+    from disk, which reassign the synthetic ids by position each time.
 
-    What can be asserted, and is what actually matters: the same three policies
-    determine the decision every time, and the outcome does not depend on the
-    order they come back in. The join is what makes the second true -- see
-    test_advice.py for its algebra.
+    Half two, that their *order* is genuinely unspecified, is the test below.
+    Together they are the "set, not sequence" claim, and the join
+    (`tests/test_advice.py` has its algebra) is what makes half two harmless.
     """
     # Five is enough to make the point; each iteration is a full load from
     # disk, and the 100-shuffle test above already covers stability at volume.
@@ -159,6 +166,38 @@ def test_the_determining_policies_are_a_set_not_a_sequence(tmp_path):
     assert orders == {("ask", "halt", "suppress")}, (
         "the *set* of determining policies must be stable even though their "
         "order is not")
+
+
+#: How many times to ask the same question below. `diagnostics.reasons` comes
+#: out of a hash set, and all six orderings of three ids come back roughly
+#: uniformly -- so one sample settles nothing, and the `ids != sorted(ids)`
+#: assertion this file started from failed about one run in six. You cannot
+#: show a value is unspecified by sampling it once; you can by sampling it
+#: often enough. 25 identical answers would mean Cedar had become
+#: deterministic, which is the only outcome here worth failing over.
+REASON_SAMPLES = 25
+
+
+def test_cedar_does_not_promise_an_order_for_the_determining_policies(tmp_path):
+    """Half two, and the reason the join exists at all (docs/spikes.md S1.2).
+
+    If Cedar listed the determining policies in *any* defined order -- source
+    order, say -- then "take the first" would be a defensible (if fragile)
+    design. It does not: one policy set, one request, asked repeatedly, comes
+    back ordered differently each time. There is no first to take.
+
+    Stability of the *set* belongs to the test above; this one watches only
+    the order, and one load is therefore enough.
+    """
+    bundle = load_from([BASELINE] + POLICIES, tmp_path)
+    orders = {tuple(engine.decide(bundle, state_for()).policy_ids)
+              for _ in range(REASON_SAMPLES)}
+
+    assert len(orders) > 1, (
+        f"Cedar returned {next(iter(orders))} on all {REASON_SAMPLES} "
+        "identical requests. The property under test is unaffected -- the join "
+        "does not care whether the order is stable -- but docs/spikes.md S1.2 "
+        "says the order is unspecified, and that claim now needs re-checking")
 
 
 # ------------------------------------------------- sensors: also independent
